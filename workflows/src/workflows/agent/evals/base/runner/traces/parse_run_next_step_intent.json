@@ -1,0 +1,22 @@
+{
+  "case_name": "parse run next step intent",
+  "timestamp": "2026-04-12T09:49:45.504750",
+  "prompt": "run the next step",
+  "intent_llm": {
+    "intent": "run_next_step",
+    "item_id": null,
+    "step_name": null,
+    "edit_text": null,
+    "parameters": null,
+    "reasoning": "The user explicitly requested to 'run the next step', which directly maps to the run_next_step intent. No item is currently focused (focused_item is null), and no editing or querying of items was requested."
+  },
+  "intent_rule_based": null,
+  "final_intent": "run_next_step",
+  "item_resolution": {
+    "item_id": null,
+    "resolution_msg": "There are no items yet."
+  },
+  "engine_calls": [],
+  "agent_response": "There are no items yet.",
+  "errors": []
+}

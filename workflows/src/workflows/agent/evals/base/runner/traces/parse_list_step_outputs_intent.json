@@ -1,0 +1,39 @@
+{
+  "case_name": "parse list step outputs intent",
+  "timestamp": "2026-04-12T09:57:47.459999",
+  "prompt": "list step outputs",
+  "intent_llm": {
+    "intent": "list_step_outputs",
+    "item_id": null,
+    "step_name": null,
+    "edit_text": null,
+    "parameters": null,
+    "reasoning": "The user's message 'list step outputs' directly matches the intent 'list_step_outputs', which is defined as wanting to list all step outputs for the current item. The context shows an empty items array and no focused_item, but this doesn't change the intent interpretation."
+  },
+  "intent_rule_based": null,
+  "final_intent": "list_step_outputs",
+  "item_resolution": {
+    "item_id": null,
+    "resolution_msg": "There are no items yet."
+  },
+  "engine_calls": [
+    {
+      "call": "run_next_step",
+      "args": {
+        "item_id": null
+      },
+      "result": null
+    },
+    {
+      "call": "load_item",
+      "args": {
+        "item_id": null
+      },
+      "result": null
+    }
+  ],
+  "agent_response": null,
+  "errors": [
+    "None"
+  ]
+}

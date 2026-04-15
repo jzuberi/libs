@@ -1,0 +1,22 @@
+{
+  "case_name": "show step output transform",
+  "timestamp": "2026-04-12T09:56:40.679473",
+  "prompt": "show step transform_data",
+  "intent_llm": {
+    "intent": "show_step_output",
+    "item_id": null,
+    "step_name": "transform_data",
+    "edit_text": null,
+    "parameters": null,
+    "reasoning": "The user's request 'show step transform_data' clearly indicates they want to view the output of a specific workflow step. The intent matches 'show_step_output' as this is the designated action for viewing step outputs. The step name 'transform_data' is explicitly mentioned in the query and corresponds to one of the steps in the default workflow path."
+  },
+  "intent_rule_based": null,
+  "final_intent": "show_step_output",
+  "item_resolution": {
+    "item_id": null,
+    "resolution_msg": "There are no items yet."
+  },
+  "engine_calls": [],
+  "agent_response": "There are no items yet.",
+  "errors": []
+}

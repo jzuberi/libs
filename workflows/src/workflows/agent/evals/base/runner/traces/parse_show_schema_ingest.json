@@ -1,0 +1,22 @@
+{
+  "case_name": "parse show schema ingest",
+  "timestamp": "2026-04-12T09:49:58.714478",
+  "prompt": "show schema for ingest_data",
+  "intent_llm": {
+    "intent": "show_schema",
+    "item_id": null,
+    "step_name": "ingest_data",
+    "edit_text": null,
+    "parameters": null,
+    "reasoning": "The user explicitly requested to 'show schema for ingest_data', which directly matches the show_schema intent. The step name is extracted from the request itself."
+  },
+  "intent_rule_based": null,
+  "final_intent": "show_schema",
+  "item_resolution": {
+    "item_id": null,
+    "resolution_msg": "There are no items yet."
+  },
+  "engine_calls": [],
+  "agent_response": "There are no items yet.",
+  "errors": []
+}

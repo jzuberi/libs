@@ -1,0 +1,39 @@
+{
+  "case_name": "list step outputs",
+  "timestamp": "2026-04-12T09:56:56.263714",
+  "prompt": "list step outputs",
+  "intent_llm": {
+    "intent": "list_step_outputs",
+    "item_id": null,
+    "step_name": null,
+    "edit_text": null,
+    "parameters": null,
+    "reasoning": "The user explicitly requested 'list step outputs', which directly matches the intent 'list_step_outputs' - they want to see all step outputs for the current item in the workflow."
+  },
+  "intent_rule_based": null,
+  "final_intent": "list_step_outputs",
+  "item_resolution": {
+    "item_id": null,
+    "resolution_msg": "There are no items yet."
+  },
+  "engine_calls": [
+    {
+      "call": "run_next_step",
+      "args": {
+        "item_id": null
+      },
+      "result": null
+    },
+    {
+      "call": "load_item",
+      "args": {
+        "item_id": null
+      },
+      "result": null
+    }
+  ],
+  "agent_response": null,
+  "errors": [
+    "None"
+  ]
+}

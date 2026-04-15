@@ -1,0 +1,22 @@
+{
+  "case_name": "parse show schema intent",
+  "timestamp": "2026-04-12T09:57:02.877565",
+  "prompt": "show schema transform_data",
+  "intent_llm": {
+    "intent": "show_schema",
+    "item_id": null,
+    "step_name": "transform_data",
+    "edit_text": null,
+    "parameters": null,
+    "reasoning": "The user explicitly requested to 'show schema transform_data', which directly maps to the show_schema intent with step_name set to 'transform_data' as specified in the request."
+  },
+  "intent_rule_based": null,
+  "final_intent": "show_schema",
+  "item_resolution": {
+    "item_id": null,
+    "resolution_msg": "There are no items yet."
+  },
+  "engine_calls": [],
+  "agent_response": "There are no items yet.",
+  "errors": []
+}

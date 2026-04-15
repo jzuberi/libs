@@ -1,0 +1,15 @@
+{
+  "case_name": "describe project workflow",
+  "timestamp": "2026-04-12T09:16:03.581714",
+  "prompt": "describe the workflow",
+  "intent_llm": null,
+  "intent_rule_based": null,
+  "final_intent": "describe_workflow",
+  "item_resolution": {
+    "item_id": null,
+    "resolution_msg": "There are no items yet."
+  },
+  "engine_calls": [],
+  "agent_response": "Here\u2019s an overview of the workflow:\n\n Ingest Data ('ingest_data')\n- What it does: Loads the initial list of numbers into the workflow.\n- Produces: numbers\n- Agent hints: This is the first step. It gathers raw numbers for later processing.\n\n Transform Data ('transform_data')\n- What it does: Transforms the ingested numbers by multiplying them by 10.\n- Depends on: ingest_data\n- Produces: transformed numbers\n- Agent hints: This step depends on ingest_data. It produces a list of transformed numbers.\n\n Export Data ('export_data')\n- What it does: Packages the transformed numbers into a final exportable format.\n- Depends on: transform_data\n- Produces: exported artifact\n- Agent hints: This is the final step. It exports the transformed numbers.\n",
+  "errors": []
+}

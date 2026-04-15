@@ -1,0 +1,5 @@
+# workflows/agent/evals/base/cases/intent_parsing.yaml
+- name: "run next step basic"
+  prompt: "run the next step"
+  expected:
+    intent: "run_next_step"

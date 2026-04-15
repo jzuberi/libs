@@ -1,0 +1,24 @@
+- name: "show step output ingest"
+  prompt: "show step ingest_data"
+  expected:
+    intent: "show_step_output"
+    must_include:
+      - "ingest_data"
+      - "value"
+
+- name: "show step output transform"
+  prompt: "show step transform_data"
+  expected:
+    intent: "show_step_output"
+    must_include:
+      - "transform_data"
+      - "value"
+
+- name: "list step outputs"
+  prompt: "list step outputs"
+  expected:
+    intent: "list_step_outputs"
+    must_include:
+      - "ingest_data"
+      - "transform_data"
+      - "export_data"

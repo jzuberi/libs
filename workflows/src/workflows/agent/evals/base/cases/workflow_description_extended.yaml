@@ -1,0 +1,20 @@
+- name: "workflow description includes all steps"
+  prompt: "describe the workflow"
+  expected:
+    intent: "describe_workflow"
+    must_include:
+      - "Ingest"
+      - "Transform"
+      - "Export"
+      - "ingest_data"
+      - "transform_data"
+      - "export_data"
+
+- name: "workflow description includes dependencies"
+  prompt: "describe workflow"
+  expected:
+    intent: "describe_workflow"
+    must_include:
+      - "Depends on"
+      - "ingest_data"
+      - "transform_data"

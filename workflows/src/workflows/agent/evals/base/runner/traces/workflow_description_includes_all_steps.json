@@ -1,0 +1,22 @@
+{
+  "case_name": "workflow description includes all steps",
+  "timestamp": "2026-04-12T09:58:08.243936",
+  "prompt": "describe the workflow",
+  "intent_llm": {
+    "intent": "describe_workflow",
+    "item_id": null,
+    "step_name": null,
+    "edit_text": null,
+    "parameters": null,
+    "reasoning": "The user explicitly asked to 'describe the workflow', which directly matches the intent type 'describe_workflow' defined in the valid values. This intent is for when a user wants a human-readable explanation of the workflow including steps, dependencies, and purpose."
+  },
+  "intent_rule_based": null,
+  "final_intent": "describe_workflow",
+  "item_resolution": {
+    "item_id": null,
+    "resolution_msg": "There are no items yet."
+  },
+  "engine_calls": [],
+  "agent_response": "Here\u2019s an overview of the workflow:\n\n Ingest ('ingest_data')\n- What it does: Synthetic ingest step for base evals.\n\n Transform ('transform_data')\n- What it does: Synthetic transform step for base evals.\n- Depends on: ingest_data\n\n Export ('export_data')\n- What it does: Synthetic export step for base evals.\n- Depends on: transform_data\n",
+  "errors": []
+}

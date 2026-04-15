@@ -1,0 +1,22 @@
+{
+  "case_name": "parse edit step intent",
+  "timestamp": "2026-04-12T09:57:29.415644",
+  "prompt": "edit step transform_data: multiply by 20",
+  "intent_llm": {
+    "intent": "edit_step_output",
+    "item_id": null,
+    "step_name": "transform_data",
+    "edit_text": "multiply by 20",
+    "parameters": null,
+    "reasoning": "The user's request 'edit step transform_data: multiply by 20' clearly indicates they want to modify the output or behavior of the 'transform_data' step in their workflow. The phrase 'edit step' directly maps to the 'edit_step_output' intent, and they've specified both the step name ('transform_data') and the desired modification ('multiply by 20')."
+  },
+  "intent_rule_based": null,
+  "final_intent": "edit_step_output",
+  "item_resolution": {
+    "item_id": null,
+    "resolution_msg": "There are no items yet."
+  },
+  "engine_calls": [],
+  "agent_response": "There are no items yet.",
+  "errors": []
+}

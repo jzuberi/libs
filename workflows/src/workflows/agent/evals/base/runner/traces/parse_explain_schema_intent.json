@@ -1,0 +1,22 @@
+{
+  "case_name": "parse explain schema intent",
+  "timestamp": "2026-04-12T09:57:15.609386",
+  "prompt": "explain schema export_data",
+  "intent_llm": {
+    "intent": "explain_schema",
+    "item_id": null,
+    "step_name": "export_data",
+    "edit_text": null,
+    "parameters": null,
+    "reasoning": "The user's request 'explain schema export_data' directly matches the intent 'explain_schema'. The step name is extracted from the query as 'export_data', which is also a valid workflow path in the provided context."
+  },
+  "intent_rule_based": null,
+  "final_intent": "explain_schema",
+  "item_resolution": {
+    "item_id": null,
+    "resolution_msg": "There are no items yet."
+  },
+  "engine_calls": [],
+  "agent_response": "There are no items yet.",
+  "errors": []
+}

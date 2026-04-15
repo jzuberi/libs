@@ -1,0 +1,22 @@
+- name: "parse show schema intent"
+  prompt: "show schema transform_data"
+  expected:
+    intent: "show_schema"
+
+- name: "parse explain schema intent"
+  prompt: "explain schema export_data"
+  expected:
+    intent: "explain_schema"
+
+- name: "parse edit step intent"
+  prompt: "edit step transform_data: multiply by 20"
+  expected:
+    intent: "edit_step_output"
+    must_include:
+      - "transform_data"
+      - "multiply by 20"
+
+- name: "parse list step outputs intent"
+  prompt: "list step outputs"
+  expected:
+    intent: "list_step_outputs"

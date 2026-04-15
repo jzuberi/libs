@@ -1,0 +1,44 @@
+- name: "show schema ingest"
+  prompt: "show schema ingest_data"
+  expected:
+    intent: "show_schema"
+    must_include:
+      - "Ingest Data"
+      - "numbers"
+      - "array"
+
+- name: "show schema transform"
+  prompt: "show schema transform_data"
+  expected:
+    intent: "show_schema"
+    must_include:
+      - "Transform Data"
+      - "transformed"
+      - "array"
+
+- name: "show schema export"
+  prompt: "show schema export_data"
+  expected:
+    intent: "show_schema"
+    must_include:
+      - "Export Data"
+      - "artifact"
+      - "object"
+
+- name: "explain schema ingest"
+  prompt: "explain schema ingest_data"
+  expected:
+    intent: "explain_schema"
+    must_include:
+      - "Ingest Data"
+      - "numbers"
+      - "field"
+      - "array"
+
+- name: "explain schema unknown step"
+  prompt: "explain schema does_not_exist"
+  expected:
+    intent: "explain_schema"
+    must_include:
+      - "Unknown"
+      - "step"

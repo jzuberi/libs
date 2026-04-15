@@ -1,0 +1,21 @@
+[project]
+name = "workflows"
+version = "0.1.0"
+description = "Composable workflow engine with decorators, agents, and nested workflows."
+readme = "README.md"
+requires-python = ">=3.10"
+
+dependencies = [
+    "pydantic>=2.0",
+    "jinja2",
+    "typing-extensions",
+]
+
+[tool.uv]
+package = true
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "ruff",
+]

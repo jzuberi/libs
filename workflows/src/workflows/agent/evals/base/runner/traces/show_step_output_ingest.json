@@ -1,0 +1,22 @@
+{
+  "case_name": "show step output ingest",
+  "timestamp": "2026-04-12T09:56:26.508319",
+  "prompt": "show step ingest_data",
+  "intent_llm": {
+    "intent": "show_step_output",
+    "item_id": null,
+    "step_name": "ingest_data",
+    "edit_text": null,
+    "parameters": null,
+    "reasoning": "The user's request 'show step ingest_data' clearly indicates they want to view the output of a specific workflow step. The command structure follows the pattern for requesting step output display, with 'ingest_data' being the explicit step name mentioned."
+  },
+  "intent_rule_based": null,
+  "final_intent": "show_step_output",
+  "item_resolution": {
+    "item_id": null,
+    "resolution_msg": "There are no items yet."
+  },
+  "engine_calls": [],
+  "agent_response": "There are no items yet.",
+  "errors": []
+}

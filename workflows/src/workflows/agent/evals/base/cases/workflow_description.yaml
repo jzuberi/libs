@@ -1,0 +1,11 @@
+# workflows/agent/evals/base/cases/workflow_description.yaml
+- name: "describe workflow basic"
+  prompt: "can you describe the workflow?"
+  expected:
+    intent: "describe_workflow"
+    must_include:
+      - "Ingest"
+      - "Transform"
+      - "Export"
+    must_not_include:
+      - "Which item are you referring to"

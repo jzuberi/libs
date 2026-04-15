@@ -1,0 +1,22 @@
+{
+  "case_name": "show schema export",
+  "timestamp": "2026-04-12T09:55:31.106095",
+  "prompt": "show schema export_data",
+  "intent_llm": {
+    "intent": "show_schema",
+    "item_id": null,
+    "step_name": "export_data",
+    "edit_text": null,
+    "parameters": null,
+    "reasoning": "The user explicitly requested to 'show schema export_data', which directly matches the 'show_schema' intent with the step name being 'export_data' from the workflow."
+  },
+  "intent_rule_based": null,
+  "final_intent": "show_schema",
+  "item_resolution": {
+    "item_id": null,
+    "resolution_msg": "There are no items yet."
+  },
+  "engine_calls": [],
+  "agent_response": "There are no items yet.",
+  "errors": []
+}

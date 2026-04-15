@@ -1,0 +1,28 @@
+- name: "parse describe workflow intent"
+  prompt: "describe the workflow"
+  expected:
+    intent: "describe_workflow"
+
+- name: "parse run next step intent"
+  prompt: "run the next step"
+  expected:
+    intent: "run_next_step"
+
+- name: "parse show schema ingest"
+  prompt: "show schema for ingest_data"
+  expected:
+    intent: "show_schema"
+    must_include:
+      - "ingest_data"
+
+- name: "parse show step output intent"
+  prompt: "show step output for transform_data"
+  expected:
+    intent: "show_step_output"
+    must_include:
+      - "transform_data"
+
+- name: "parse list step outputs intent"
+  prompt: "list step outputs"
+  expected:
+    intent: "list_step_outputs"

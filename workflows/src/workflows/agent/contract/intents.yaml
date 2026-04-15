@@ -1,0 +1,92 @@
+intents:
+
+  query_item:
+    description: "User wants details about the current item: status, branch, substate, next action."
+    requires_item: true
+    requires_step: false
+
+  query_workflow:
+    description: "User wants to list all items in the workflow."
+    requires_item: false
+    requires_step: false
+
+  run_next_step:
+    description: "User wants the engine to run the next step for the current item."
+    requires_item: true
+    requires_step: false
+
+  approve_substate:
+    description: "User wants to approve the current substate of the item."
+    requires_item: true
+    requires_step: false
+
+  export:
+    description: "User wants to export the item (final output generation)."
+    requires_item: true
+    requires_step: false
+
+  show_step_output:
+    description: "User wants to see the output of a specific step."
+    requires_item: true
+    requires_step: true
+
+  edit_step_output:
+    description: "User wants to edit the output of a specific step."
+    requires_item: true
+    requires_step: true
+
+  list_step_outputs:
+    description: "User wants to list all step outputs for the current item."
+    requires_item: true
+    requires_step: false
+
+  show_schema:
+    description: "User wants to see the schema for a specific step."
+    requires_item: false
+    requires_step: true
+
+  explain_schema:
+    description: "User wants a human-readable explanation of a step's schema."
+    requires_item: false
+    requires_step: true
+
+  describe_workflow:
+    description: "User wants a human-readable explanation of the workflow: steps, dependencies, and purpose."
+    requires_item: false
+    requires_step: false
+
+  # ------------------------------------------------------------------
+  # NEW INTENTS FOR PENDING-INTENT CLARIFICATION FLOW
+  # ------------------------------------------------------------------
+
+  confirm_pending:
+    description: "User is confirming the previously proposed action or item in a pending clarification."
+    requires_item: false
+    requires_step: false
+
+  reject_pending:
+    description: "User is rejecting the previously proposed action or item and wants to choose another."
+    requires_item: false
+    requires_step: false
+
+  cancel_pending:
+    description: "User wants to cancel the pending action and return to normal conversation."
+    requires_item: false
+    requires_step: false
+
+  provide_item_id:
+    description: "User is specifying which item id to use for the pending action."
+    requires_item: false
+    requires_step: false
+
+  query_current_item:
+    description: "User is asking what the current or last active item is."
+    requires_item: false
+    requires_step: false
+
+  # ------------------------------------------------------------------
+
+  idle:
+    description: "Unclear or no actionable intent; agent should ask for clarification."
+    requires_item: false
+    requires_step: false

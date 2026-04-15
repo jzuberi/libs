@@ -1,0 +1,22 @@
+{
+  "case_name": "explain schema unknown step",
+  "timestamp": "2026-04-12T09:55:58.011475",
+  "prompt": "explain schema does_not_exist",
+  "intent_llm": {
+    "intent": "explain_schema",
+    "item_id": null,
+    "step_name": null,
+    "edit_text": null,
+    "parameters": null,
+    "reasoning": "The user's request 'explain schema does_not_exist' indicates they want an explanation of a schema. The keyword 'explain' directly maps to the 'explain_schema' intent in the valid values list. Since no specific item or step is mentioned, all other fields are set to null."
+  },
+  "intent_rule_based": null,
+  "final_intent": "explain_schema",
+  "item_resolution": {
+    "item_id": null,
+    "resolution_msg": "There are no items yet."
+  },
+  "engine_calls": [],
+  "agent_response": "There are no items yet.",
+  "errors": []
+}

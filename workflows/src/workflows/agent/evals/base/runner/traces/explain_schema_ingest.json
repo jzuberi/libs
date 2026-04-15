@@ -1,0 +1,22 @@
+{
+  "case_name": "explain schema ingest",
+  "timestamp": "2026-04-12T09:55:43.383903",
+  "prompt": "explain schema ingest_data",
+  "intent_llm": {
+    "intent": "explain_schema",
+    "item_id": null,
+    "step_name": "ingest_data",
+    "edit_text": null,
+    "parameters": null,
+    "reasoning": "The user explicitly asked to 'explain schema ingest_data'. This directly matches the 'explain_schema' intent which is designed for human-readable explanations of a step's schema. The step name 'ingest_data' comes from the workflow_paths configuration showing it as part of the default pipeline."
+  },
+  "intent_rule_based": null,
+  "final_intent": "explain_schema",
+  "item_resolution": {
+    "item_id": null,
+    "resolution_msg": "There are no items yet."
+  },
+  "engine_calls": [],
+  "agent_response": "There are no items yet.",
+  "errors": []
+}
