@@ -97,6 +97,8 @@ def workflow(name: str, steps: list = None):
         # Register engine class
         WorkflowLoader.register(name, GeneratedEngine)
 
-        return GeneratedEngine
+        cls.Engine = GeneratedEngine
+        return cls
+
 
     return decorator
