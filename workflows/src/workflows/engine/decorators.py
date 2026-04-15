@@ -38,8 +38,12 @@ def step(
 
     return decorator
 
-
-def workflow(name: str, steps: list = None):
+def workflow(
+    name: str,
+    steps: list = None,
+    approval_requirements: dict | None = None,
+    label_fn=None,
+):
     def decorator(cls):
         step_specs = {}
 
@@ -61,7 +65,7 @@ def workflow(name: str, steps: list = None):
         definition = WorkflowDefinition(
             name=name,
             step_specs=step_specs,
-            workflow_paths=cls.workflow_paths
+            workflow_paths=cls.workflow_paths,
         )
 
         # Create dynamic engine subclass
@@ -78,8 +82,8 @@ def workflow(name: str, steps: list = None):
         if "_export_item_impl" in cls.__dict__:
             GeneratedEngine._export_item_impl = cls.__dict__["_export_item_impl"]
 
-        # Inject constructor (no super() → avoids __class__ cell issue)
-        def __init__(self, base_dir, approval_requirements=None, agent_llm=None, label_fn=None):
+        # Inject constructor
+        def __init__(self, base_dir, agent_llm=None):
             BaseWorkflowEngine.__init__(
                 self,
                 definition=definition,
@@ -91,7 +95,7 @@ def workflow(name: str, steps: list = None):
 
         GeneratedEngine.__init__ = __init__
 
-        # Clear abstract methods so class becomes concrete
+        # Clear abstract methods
         GeneratedEngine.__abstractmethods__ = frozenset()
 
         # Register engine class
@@ -99,6 +103,5 @@ def workflow(name: str, steps: list = None):
 
         cls.Engine = GeneratedEngine
         return cls
-
 
     return decorator
