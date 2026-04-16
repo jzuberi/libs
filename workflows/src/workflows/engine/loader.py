@@ -16,5 +16,6 @@ class WorkflowLoader:
         Load a workflow engine class from the registry.
         """
         if name not in workflow_registry:
+            print(f"Workflow '{name}' is not registered.")
             raise ValueError(f"Workflow '{name}' is not registered.")
         return workflow_registry[name]

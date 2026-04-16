@@ -6,8 +6,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-
-
 from .models import (
     CandidateResolutionResult,
     TraceLevel,
@@ -87,8 +85,7 @@ class BaseWorkflowEngine(EngineStorageMixin, ABC):
         if step_spec is None:
             raise ValueError(f"No step spec found for '{step_name}'")
 
-        item_dir = self.base_dir / item_id
-        artifact_dir = item_dir / "artifacts"
+        artifact_dir = self._item_dir(item_id) / "artifacts"
         artifact_dir.mkdir(exist_ok=True)
 
         # -------------------------------------------------------------
@@ -282,6 +279,7 @@ class BaseWorkflowEngine(EngineStorageMixin, ABC):
         style: Optional[Dict[str, Any]] = None,
         branch: str = "default",
         initial_substate: str = "start",
+        parent_id: Optional[str] = None,   # NEW
     ) -> WorkflowItem:
 
         item_id = str(uuid.uuid4())
@@ -293,17 +291,16 @@ class BaseWorkflowEngine(EngineStorageMixin, ABC):
             metadata=metadata or {},
             style=style or {},
             status=status,
+            parent_id=parent_id,           # NEW
         )
 
         item.label = self.label_fn(item)
 
         self._items[item_id] = item
 
-        # Persist immediately
         self._write_item(item)
         self._write_status(item)
 
-        # Log creation
         self._log_trace(
             item_id=item_id,
             branch=branch,
@@ -311,11 +308,12 @@ class BaseWorkflowEngine(EngineStorageMixin, ABC):
             step_name="create_item",
             actor="engine",
             artifact=None,
-            details={"description": description, "type": type},
+            details={"description": description, "type": type, "parent_id": parent_id},
             trace_level=TraceLevel.AUDIT,
         )
 
         return item
+
 
     def load_item(self, item_id: str) -> WorkflowItem:
         if hasattr(self, "trace") and self.trace:
@@ -374,7 +372,7 @@ class BaseWorkflowEngine(EngineStorageMixin, ABC):
         Load the materialized current output of a step.
         Falls back to raw output if no edits exist.
         """
-        artifact_dir = self.base_dir / item_id / "artifacts"
+        artifact_dir = self._item_dir(item_id) / "artifacts"
         current_path = artifact_dir / f"{step_name}_current.json"
         raw_path = artifact_dir / f"{step_name}_raw.json"
 
@@ -385,7 +383,12 @@ class BaseWorkflowEngine(EngineStorageMixin, ABC):
 
         raise FileNotFoundError(f"No output found for step '{step_name}'")
 
-    def run_next_step(self, item_id: str, context: Optional[Dict[str, Any]] = None) -> WorkflowStepOutput:
+
+    def run_next_step(
+        self,
+        item_id: str,
+        context: Optional[Dict[str, Any]] = None
+    ) -> WorkflowStepOutput:
         # Load item and determine current step
         item = self.load_item(item_id)
         status = item.status
@@ -396,7 +399,7 @@ class BaseWorkflowEngine(EngineStorageMixin, ABC):
             raise ValueError(f"No step spec for substate '{old_substate}'")
 
         # ---------------------------------------------------------
-        # NO PRE-STEP APPROVAL CHECK IN MODEL B
+        # MODEL B: NO PRE-STEP APPROVAL CHECK
         # ---------------------------------------------------------
 
         step_input = WorkflowStepInput(item=item, engine=self, context=context or {})
@@ -414,7 +417,19 @@ class BaseWorkflowEngine(EngineStorageMixin, ABC):
         )
 
         # Execute step function
-        output = step_spec.fn(step_input)
+        raw_output = step_spec.fn(step_input)
+
+        # Normalize to WorkflowStepOutput
+        if isinstance(raw_output, WorkflowStepOutput):
+            output = raw_output
+        else:
+            output = WorkflowStepOutput(
+                artifact=raw_output,
+                next_substate=None,
+                details={},
+                summary="",
+                approved=None,
+            )
 
         # Validate output via schema
         validated_artifact = self._validate_step_output(step_spec, output)
@@ -434,7 +449,7 @@ class BaseWorkflowEngine(EngineStorageMixin, ABC):
         )
 
         # Save raw artifact to disk
-        artifact_dir = self.base_dir / item_id / "artifacts"
+        artifact_dir = self._item_dir(item_id) / "artifacts"
         artifact_dir.mkdir(exist_ok=True)
         raw_path = artifact_dir / f"{step_spec.name}_raw.json"
         self._write_json(raw_path, output.artifact)
@@ -442,14 +457,26 @@ class BaseWorkflowEngine(EngineStorageMixin, ABC):
         # ---------------------------------------------------------
         # DETERMINE NEXT SUBSTATE
         # ---------------------------------------------------------
-        next_substate = output.next_substate
-        if next_substate is None:
-            next_substate = self.definition.get_default_next_substate(
-                status.branch,
-                old_substate
-            )
+        # IMPORTANT: if the step indicates it's blocked (e.g. nested workflow paused),
+        # we DO NOT auto-advance to the default next substate.
+        details = output.details or {}
+        step_blocked = details.get("blocked") is True
+        step_approved = getattr(output, "approved", None)
 
-        # Move to next substate
+        next_substate = output.next_substate
+
+        if next_substate is None:
+            if step_blocked or step_approved is False:
+                # Stay on the same substate (e.g. run_child) when blocked
+                next_substate = old_substate
+            else:
+                # Normal case: advance along the default path
+                next_substate = self.definition.get_default_next_substate(
+                    status.branch,
+                    old_substate,
+                )
+
+        # Move to next substate (may be same as old_substate if blocked)
         if next_substate is not None:
             item.status.substate = next_substate
 
@@ -457,11 +484,22 @@ class BaseWorkflowEngine(EngineStorageMixin, ABC):
 
         # ---------------------------------------------------------
         # POST-STEP APPROVAL LOGIC (Model B)
-        #
-        # Approval applies ONLY to the step that just ran (old_substate).
+        # 1. Default: approval depends on whether the *new* substate requires approval.
+        # 2. OVERRIDE: if the step explicitly sets output.approved, honor it.
         # ---------------------------------------------------------
-        if self.substate_requires_approval(status.branch, old_substate):
-            item.status.approved = False
+        requires_approval = self.substate_requires_approval(
+            status.branch,
+            new_substate,
+        )
+
+        # Default behavior
+        item.status.requires_approval = requires_approval
+        item.status.approved = not requires_approval
+
+        # Critical: honor step override (e.g., run_child / call_workflow)
+        if step_approved is not None:
+            item.status.approved = step_approved
+            item.status.requires_approval = not step_approved
 
         # Persist item
         self.save_item(item)
@@ -474,18 +512,21 @@ class BaseWorkflowEngine(EngineStorageMixin, ABC):
             step_name=step_spec.name,
             actor="engine",
             artifact=output.artifact,
-            details={"event": "step_end", **(output.details or {})},
+            details={"event": "step_end", **(details or {})},
             trace_level=TraceLevel.INFO,
         )
 
         return output
 
+
+       
+
     def run_until_blocked(self, item_id: str, context=None):
         """
         Execute steps until:
-        - an approval gate is reached (Model B: approval on previous step), OR
-        - the workflow completes (no next substate), OR
-        - a real error occurs.
+        - an approval gate is reached (Model B: approval applies to the *new* substate), OR
+        - the workflow completes, OR
+        - an error occurs.
         """
         while True:
             item = self.load_item(item_id)
@@ -496,37 +537,25 @@ class BaseWorkflowEngine(EngineStorageMixin, ABC):
             print(">>> RUN LOOP")
             print("    substate:", substate)
             print("    approved:", status.approved)
-            print("    requires_approval(current):", self.substate_requires_approval(branch, substate))
+            print("    requires_approval(current):", status.requires_approval)
 
-            path = self.definition.workflow_paths[branch]
-            idx = path.index(substate)
-            if idx > 0:
-                prev_substate = path[idx - 1]
-                print("    prev_substate:", prev_substate)
-                print("    requires_approval(prev):", self.substate_requires_approval(branch, prev_substate))
+            # ---------------------------------------------------------
+            # 1. MODEL B APPROVAL GATE
+            #    Approval applies to the *current* substate.
+            #    If this substate requires approval and is not approved → STOP.
+            # ---------------------------------------------------------
+            if status.requires_approval and not status.approved:
+                return {
+                    "item_id": item_id,
+                    "blocked": True,
+                    "reason": "approval_required",
+                    "substate": substate,
+                }
 
-                # -------------------------------------------------
-                # 1. POST-EXECUTION APPROVAL GATE (Model B)
-                #    If the PREVIOUS step requires approval and
-                #    approved == False, PAUSE HERE.
-                # -------------------------------------------------
-                if self.substate_requires_approval(branch, prev_substate):
-                    if not status.approved:
-                        return {
-                            "item_id": item_id,
-                            "blocked": True,
-                            "reason": "approval_required",
-                            "substate": substate,
-                        }
-
-            # -----------------------------------------------------
+            # ---------------------------------------------------------
             # 2. TERMINAL CONDITION: no next substate
-            #    (only checked AFTER approval gate)
-            # -----------------------------------------------------
-            next_substate = self.definition.get_default_next_substate(
-                branch,
-                substate,
-            )
+            # ---------------------------------------------------------
+            next_substate = self.definition.get_default_next_substate(branch, substate)
             if next_substate is None:
                 return {
                     "item_id": item_id,
@@ -535,9 +564,9 @@ class BaseWorkflowEngine(EngineStorageMixin, ABC):
                     "substate": substate,
                 }
 
-            # -----------------------------------------------------
-            # 3. No step spec = also terminal (defensive)
-            # -----------------------------------------------------
+            # ---------------------------------------------------------
+            # 3. Defensive: no step spec → treat as terminal
+            # ---------------------------------------------------------
             step_spec = self.definition.step_specs.get(substate)
             if step_spec is None:
                 return {
@@ -547,9 +576,9 @@ class BaseWorkflowEngine(EngineStorageMixin, ABC):
                     "substate": substate,
                 }
 
-            # -----------------------------------------------------
-            # 4. Run the current step
-            # -----------------------------------------------------
+            # ---------------------------------------------------------
+            # 4. Run the step
+            # ---------------------------------------------------------
             try:
                 self.run_next_step(item_id, context=context)
             except RuntimeError:
@@ -563,23 +592,75 @@ class BaseWorkflowEngine(EngineStorageMixin, ABC):
                     "substate": substate,
                 }
 
-
-
     def approve_substate(self, item_id: str) -> None:
         item = self.load_item(item_id)
-        item.status.approved = True
+        status = item.status
+        branch = status.branch
+        current_substate = status.substate
+
+        # ---------------------------------------------------------
+        # 1. Approve the CURRENT substate
+        # ---------------------------------------------------------
+        status.approved = True
+        status.requires_approval = False
+
+        # ---------------------------------------------------------
+        # 2. If this step already ran, advance to next substate
+        # ---------------------------------------------------------
+        if current_substate in item.step_outputs:
+            next_substate = self.definition.get_default_next_substate(
+                branch,
+                current_substate,
+            )
+            if next_substate is not None:
+                # Move to next substate
+                status.substate = next_substate
+
+                # ---------------------------------------------------------
+                # ⭐ CRITICAL FIX:
+                # Reset approval for the NEXT substate so it will actually run.
+                # ---------------------------------------------------------
+                status.approved = False
+                status.requires_approval = self.definition.step_requires_approval(
+                    branch,
+                    next_substate,
+                )
+
+        # Save updated child
         self.save_item(item)
 
+        # ---------------------------------------------------------
+        # 3. CASCADE APPROVAL UPWARD
+        # ---------------------------------------------------------
+        parent_id = item.parent_id
+        while parent_id:
+            parent = self.load_item(parent_id)
+
+            # Parent approval is satisfied because child is approved
+            parent.status.approved = True
+            parent.status.requires_approval = False
+
+            self.save_item(parent)
+            parent_id = parent.parent_id
+
+        # ---------------------------------------------------------
+        # 4. AUDIT LOG (unchanged)
+        # ---------------------------------------------------------
         self._log_trace(
             item_id=item.id,
-            branch=item.status.branch,
-            substate=item.status.substate,
+            branch=status.branch,
+            substate=status.substate,
             step_name="approve_substate",
             actor="user",
             artifact=None,
-            details={"approved": True},
+            details={
+                "approved": True,
+                "from_substate": current_substate,
+            },
             trace_level=TraceLevel.AUDIT,
         )
+
+
 
     def export_item(self, item_id: str) -> None:
         item = self.load_item(item_id)
@@ -692,8 +773,7 @@ class BaseWorkflowEngine(EngineStorageMixin, ABC):
         Return a structured summary of all step outputs for an item.
         Includes raw, current, and edit snapshots for each step.
         """
-        item_dir = self.base_dir / item_id
-        artifact_dir = item_dir / "artifacts"
+        artifact_dir = self._item_dir(item_id) / "artifacts"
         if not artifact_dir.exists():
             return {}
 
@@ -756,14 +836,14 @@ class BaseWorkflowEngine(EngineStorageMixin, ABC):
 
 
     def load_raw_step_output(self, item_id: str, step_name: str):
-        artifact_dir = self.base_dir / item_id / "artifacts"
+        artifact_dir = self._item_dir(item_id) / "artifacts"
         raw_path = artifact_dir / f"{step_name}_raw.json"
         if raw_path.exists():
             return self._read_json(raw_path)
         raise FileNotFoundError(f"No raw output for step '{step_name}'")
 
     def load_step_edit_history(self, item_id: str, step_name: str) -> List[Dict[str, Any]]:
-        artifact_dir = self.base_dir / item_id / "artifacts"
+        artifact_dir = self._item_dir(item_id) / "artifacts"
         edits = []
 
         for path in artifact_dir.glob(f"{step_name}_edit_*.json"):
@@ -818,6 +898,58 @@ class BaseWorkflowEngine(EngineStorageMixin, ABC):
 
             # Run the next step
             self.run_next_step(item_id)
+
+    def review(self, root_item_id: str):
+        blocked_item = self._find_blocked_node(root_item_id)
+
+        if not blocked_item:
+            return {
+                "status": "complete",
+                "item_id": root_item_id,
+                "message": "No pending approvals",
+            }
+
+        step_outputs = {
+            step: record.output
+            for step, record in blocked_item.step_outputs.items()
+        }
+
+        return {
+            "status": "blocked",
+            "item_id": blocked_item.id,
+            "workflow": blocked_item.type,
+            "substate": blocked_item.status.substate,
+            "step_outputs": step_outputs,
+        }
+
+    def _children_of(self, item_id: str) -> list[str]:
+        return [
+            child_id
+            for child_id, item in self._items.items()
+            if item.parent_id == item_id
+        ]
+
+    def _is_blocked(self, item: WorkflowItem) -> bool:
+        status = item.status
+        return status.requires_approval and not status.approved
+
+    def _find_blocked_node(self, item_id: str):
+        item = self._items[item_id]
+
+        # 1. Search children first (deepest blocked node wins)
+        for child_id in self._children_of(item_id):
+            blocked = self._find_blocked_node(child_id)
+            if blocked:
+                return blocked
+
+        # 2. Then consider this item
+        if self._is_blocked(item):
+            return item
+
+        return None
+
+
+
 
 
 

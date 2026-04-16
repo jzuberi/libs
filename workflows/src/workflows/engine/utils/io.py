@@ -20,11 +20,33 @@ class EngineStorageMixin:
     # ------------------------------------------------------------------
     # Directory helpers
     # ------------------------------------------------------------------
-
     def _item_dir(self, item_id: str) -> Path:
-        d = self.base_dir / item_id
+        print(f"\n[ITEM_DIR] called with item_id={item_id!r}")
+
+        # Use in-memory registry only
+        if item_id not in self._items:
+            print(f"[ITEM_DIR] ERROR: item_id {item_id!r} not in self._items")
+            raise KeyError(f"Item {item_id} not found in engine._items")
+
+        item = self._items[item_id]
+        print(f"[ITEM_DIR] item.parent_id={item.parent_id!r}")
+
+        # ROOT ITEM (no parent)
+        if not item.parent_id:
+            d = self.base_dir / item_id
+            print(f"[ITEM_DIR] ROOT DIR -> {d}")
+            d.mkdir(parents=True, exist_ok=True)
+            return d
+
+        # CHILD ITEM (recursive)
+        print(f"[ITEM_DIR] RECURSE to parent_id={item.parent_id!r}")
+        parent_dir = self._item_dir(item.parent_id)
+
+        d = parent_dir / "derived_items" / item_id
+        print(f"[ITEM_DIR] CHILD DIR -> {d}")
         d.mkdir(parents=True, exist_ok=True)
         return d
+
 
     # ------------------------------------------------------------------
     # Status persistence (Pydantic-aware)
@@ -41,6 +63,7 @@ class EngineStorageMixin:
             "branch": item.status.branch,
             "substate": item.status.substate,
             "approved": item.status.approved,
+            "requires_approval": item.status.requires_approval,
             "flags": item.status.flags,
             "updated_at": item.updated_at.isoformat(),
             "exported_at": item.exported_at.isoformat() if item.exported_at else None,
@@ -77,6 +100,7 @@ class EngineStorageMixin:
         Persist the full WorkflowItem using Pydantic's JSON serialization.
         """
         item_path = self._item_dir(item.id) / "item.json"
+
         item_path.write_text(item.model_dump_json(indent=2))
 
     def _read_item(self, item_id: str) -> WorkflowItem:

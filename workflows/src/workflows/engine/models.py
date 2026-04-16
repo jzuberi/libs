@@ -23,7 +23,6 @@ class TraceLevel(str, Enum):
 # -------------------------------------------------------------------------
 # WorkflowStatusV2
 # -------------------------------------------------------------------------
-
 class WorkflowStatus(BaseModel):
     """
     Workflow state for an item.
@@ -32,6 +31,7 @@ class WorkflowStatus(BaseModel):
     branch: str
     substate: str
     approved: bool = True
+    requires_approval: bool = False   # <-- add this
     flags: Dict[str, Any] = Field(default_factory=dict)
 
     class Config:
@@ -43,15 +43,13 @@ class WorkflowStatus(BaseModel):
     @staticmethod
     def from_dict(data: Dict[str, Any]) -> "WorkflowStatus":
         return WorkflowStatus(**data)
-    
+
     def to_json(self) -> str:
         return self.model_dump_json(indent=2)
 
     @staticmethod
     def from_json(data: str) -> "WorkflowStatus":
         return WorkflowStatus.model_validate_json(data)
-
-
 
 # -------------------------------------------------------------------------
 # Step Output Record
@@ -93,6 +91,8 @@ class WorkflowItem(BaseModel):
     id: str
     description: str
     type: str
+
+    parent_id: Optional[str] = None
 
     metadata: Dict[str, Any] = Field(default_factory=dict)
     label: Optional[str] = None
