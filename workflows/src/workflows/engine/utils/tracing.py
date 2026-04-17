@@ -11,7 +11,7 @@ from ..models import TraceLevel, WorkflowStepInput, WorkflowStepOutput
 # Workflow step tracing
 # -------------------------------------------------------------------------
 
-def workflow_step(step_name: str, trace_level: TraceLevel = TraceLevel.INFO):
+def workflow_step_internal(step_name: str, trace_level: TraceLevel = TraceLevel.INFO):
     """
     Decorator for workflow step functions.
 

@@ -21,7 +21,6 @@ class EngineStorageMixin:
     # Directory helpers
     # ------------------------------------------------------------------
     def _item_dir(self, item_id: str) -> Path:
-        print(f"\n[ITEM_DIR] called with item_id={item_id!r}")
 
         # Use in-memory registry only
         if item_id not in self._items:
@@ -29,21 +28,17 @@ class EngineStorageMixin:
             raise KeyError(f"Item {item_id} not found in engine._items")
 
         item = self._items[item_id]
-        print(f"[ITEM_DIR] item.parent_id={item.parent_id!r}")
 
         # ROOT ITEM (no parent)
         if not item.parent_id:
             d = self.base_dir / item_id
-            print(f"[ITEM_DIR] ROOT DIR -> {d}")
             d.mkdir(parents=True, exist_ok=True)
             return d
 
         # CHILD ITEM (recursive)
-        print(f"[ITEM_DIR] RECURSE to parent_id={item.parent_id!r}")
         parent_dir = self._item_dir(item.parent_id)
 
         d = parent_dir / "derived_items" / item_id
-        print(f"[ITEM_DIR] CHILD DIR -> {d}")
         d.mkdir(parents=True, exist_ok=True)
         return d
 

@@ -17,8 +17,25 @@ from .models import (
 from .workflow_definition import WorkflowDefinition
 from .utils.io import EngineStorageMixin
 from .utils.snapshot import build_context_snapshot
+from .loader import WorkflowLoader
 
-
+def _deep_merge(base: dict, updates: dict) -> dict:
+    """
+    Deep-merge `updates` into `base` with overwrite semantics.
+    Nested dicts are merged recursively; other values are replaced.
+    """
+    result = dict(base)
+    for k, v in updates.items():
+        if (
+            k in result
+            and isinstance(result[k], dict)
+            and isinstance(v, dict)
+        ):
+            result[k] = _deep_merge(result[k], v)
+        else:
+            result[k] = v
+    return result
+    
 class BaseWorkflowEngine(EngineStorageMixin, ABC):
     """
     Domain-agnostic workflow engine with per-item JSON persistence.
@@ -72,10 +89,15 @@ class BaseWorkflowEngine(EngineStorageMixin, ABC):
 
         return artifact
 
+
     def edit_step_output(self, item_id: str, step_name: str, edits: dict):
         """
         Apply user edits to a step's output with schema validation,
         versioned snapshots, and item.step_outputs registry updates.
+        Also:
+        - invalidates downstream steps
+        - resets substate to `step_name`
+        - marks item as requiring approval
         """
         # -------------------------------------------------------------
         # Load item + step spec
@@ -105,9 +127,9 @@ class BaseWorkflowEngine(EngineStorageMixin, ABC):
             current = self._read_json(raw_path)
 
         # -------------------------------------------------------------
-        # 3. Merge edits into current state
+        # 3. Deep-merge edits into current state
         # -------------------------------------------------------------
-        updated = {**current, **edits}
+        updated = _deep_merge(current, edits)
 
         # -------------------------------------------------------------
         # 4. Schema validation (if step defines a schema)
@@ -134,7 +156,9 @@ class BaseWorkflowEngine(EngineStorageMixin, ABC):
         # -------------------------------------------------------------
         # 6. Write snapshot + updated current state
         # -------------------------------------------------------------
+        # Snapshot stores just the edits (what changed)
         self._write_json(snapshot_path, edits)
+        # Current stores the fully materialized updated artifact
         self._write_json(current_path, updated)
 
         # -------------------------------------------------------------
@@ -143,20 +167,64 @@ class BaseWorkflowEngine(EngineStorageMixin, ABC):
         record = item.step_outputs.get(step_name)
         if record is None:
             # Create a new record if missing (should not happen normally)
-            record = StepOutputRecord(raw=str(raw_path))
+            record = StepOutputRecord(
+                raw=self._read_json(raw_path),
+                current=updated,
+                edits=[],
+                schema_name=(
+                    step_spec.output_schema.__name__
+                    if step_spec.output_schema else None
+                ),
+            )
             item.step_outputs[step_name] = record
-
-        record.current = str(current_path)
-        record.edits.append(str(snapshot_path))
+        else:
+            # Keep raw as the original artifact, update current + edits
+            if record.raw is None:
+                record.raw = self._read_json(raw_path)
+            record.current = updated
+            record.edits.append(str(snapshot_path))
 
         # -------------------------------------------------------------
-        # 8. Update item metadata + save
+        # 8. Invalidate downstream steps + reset substate
+        # -------------------------------------------------------------
+        branch = item.status.branch
+        path = self.definition.workflow_paths[branch]
+        if step_name not in path:
+            raise ValueError(
+                f"Step '{step_name}' is not in workflow path for branch '{branch}'"
+            )
+
+        idx = path.index(step_name)
+        downstream_steps = path[idx + 1 :]
+
+        # Remove downstream artifacts and registry entries
+        for ds in downstream_steps:
+            # Delete artifact files if they exist
+            ds_raw = artifact_dir / f"{ds}_raw.json"
+            ds_current = artifact_dir / f"{ds}_current.json"
+
+            if ds_raw.exists():
+                ds_raw.unlink()
+            if ds_current.exists():
+                ds_current.unlink()
+
+            # Remove from in-memory registry
+            if ds in item.step_outputs:
+                del item.step_outputs[ds]
+
+        # Reset workflow state to the edited step
+        item.status.substate = step_name
+        item.status.requires_approval = True
+        item.status.approved = False
+
+        # -------------------------------------------------------------
+        # 9. Update item metadata + save
         # -------------------------------------------------------------
         item.updated_at = datetime.utcnow()
         self.save_item(item)
 
         # -------------------------------------------------------------
-        # 9. Log the edit
+        # 10. Log the edit
         # -------------------------------------------------------------
         self._log_trace(
             item_id=item_id,
@@ -172,11 +240,13 @@ class BaseWorkflowEngine(EngineStorageMixin, ABC):
                 "event": "user_edit",
                 "edits": edits,
                 "snapshot_index": i,
+                "downstream_invalidated": downstream_steps,
             },
             trace_level=TraceLevel.INFO,
         )
 
         return updated
+
 
 
 
@@ -279,7 +349,8 @@ class BaseWorkflowEngine(EngineStorageMixin, ABC):
         style: Optional[Dict[str, Any]] = None,
         branch: str = "default",
         initial_substate: str = "start",
-        parent_id: Optional[str] = None,   # NEW
+        parent_id: Optional[str] = None,   
+        initial_input=None,
     ) -> WorkflowItem:
 
         item_id = str(uuid.uuid4())
@@ -291,7 +362,8 @@ class BaseWorkflowEngine(EngineStorageMixin, ABC):
             metadata=metadata or {},
             style=style or {},
             status=status,
-            parent_id=parent_id,           # NEW
+            parent_id=parent_id, 
+            initial_input=initial_input,          
         )
 
         item.label = self.label_fn(item)
@@ -316,9 +388,18 @@ class BaseWorkflowEngine(EngineStorageMixin, ABC):
 
 
     def load_item(self, item_id: str) -> WorkflowItem:
+
+        # Preserve your trace logging exactly as-is
         if hasattr(self, "trace") and self.trace:
             self.trace.record_engine_call("load_item", args={"item_id": item_id})
-        return self._items[item_id]
+
+        # ⭐ NEW: Always reload from disk to get fresh step_outputs
+        item = self._read_item(item_id)
+
+        # ⭐ Update in-memory registry so parent/child engines stay in sync
+        self._items[item_id] = item
+
+        return item
 
 
     def save_item(self, item: WorkflowItem) -> None:
@@ -383,26 +464,99 @@ class BaseWorkflowEngine(EngineStorageMixin, ABC):
 
         raise FileNotFoundError(f"No output found for step '{step_name}'")
 
+    def _run_child_workflow_step(self, item, step_spec, step_input, initial_input=None):
+
+        """
+        Execute a workflow step that runs a child workflow.
+        Step 3: minimal implementation that mirrors your existing run_child logic.
+        """
+        child_workflow_name = step_spec.child_workflow_name
+        child_engine_cls = WorkflowLoader.load_engine(child_workflow_name)
+
+        print('run child workflow step initial input')
+        print(initial_input)
+
+        # Create child engine sharing the same registry
+        child_engine = child_engine_cls(
+            base_dir=self.base_dir,
+            agent_llm=self.agent_llm,
+        )
+        child_engine._items = self._items
+
+        # Create or resume child item
+        prev = item.step_outputs.get(step_spec.name)
+        if prev and "child_item_id" in prev.current:
+            child_id = prev.current["child_item_id"]
+            child_item = child_engine.load_item(child_id)
+        else:
+            first_step = child_engine.definition.workflow_paths["default"][0]
+            child_item = child_engine.create_item(
+                description=f"Nested workflow: {child_workflow_name}",
+                type=child_workflow_name,
+                initial_substate=first_step,
+                parent_id=item.id,
+                initial_input=initial_input,
+            )
+
+
+        # Run child workflow
+        result = child_engine.run_until_blocked(child_item.id)
+
+        # Extract final export if complete
+        export_record = child_item.step_outputs.get("export_data")
+        final_export = export_record.current if export_record else None
+
+        # Build artifact
+        artifact = {
+            "child_item_id": child_item.id,
+            "result": result,
+            "child_final_export": final_export,
+        }
+
+        # Wrap in WorkflowStepOutput
+        return WorkflowStepOutput(
+            artifact=artifact,
+            details={"blocked": result["blocked"]},
+            summary=f"Ran child workflow {child_workflow_name}",
+            next_substate=None if result["blocked"] else None,
+            requires_approval=False,
+        )
+
 
     def run_next_step(
         self,
         item_id: str,
         context: Optional[Dict[str, Any]] = None
     ) -> WorkflowStepOutput:
+
         # Load item and determine current step
         item = self.load_item(item_id)
         status = item.status
-        old_substate = status.substate  # capture BEFORE running the step
+        old_substate = status.substate
         step_spec = self.definition.step_specs.get(old_substate)
 
         if step_spec is None:
             raise ValueError(f"No step spec for substate '{old_substate}'")
 
         # ---------------------------------------------------------
-        # MODEL B: NO PRE-STEP APPROVAL CHECK
+        # STEP 6.3 — Inject initial_input into the FIRST step only
         # ---------------------------------------------------------
+        first_step_name = self.definition.workflow_paths[status.branch][0]
 
-        step_input = WorkflowStepInput(item=item, engine=self, context=context or {})
+        if old_substate == first_step_name and item.initial_input:
+            step_input = WorkflowStepInput(
+                item=item,
+                engine=self,
+                context=item.initial_input,
+                step_name=step_spec.name,
+            )
+        else:
+            step_input = WorkflowStepInput(
+                item=item,
+                engine=self,
+                context=context or {},
+                step_name=step_spec.name,
+            )
 
         # STEP START TRACE
         self._log_trace(
@@ -416,23 +570,50 @@ class BaseWorkflowEngine(EngineStorageMixin, ABC):
             trace_level=TraceLevel.INFO,
         )
 
-        # Execute step function
-        raw_output = step_spec.fn(step_input)
+        # ---------------------------------------------------------
+        # WORKFLOW STEP (child workflow)
+        # ---------------------------------------------------------
+        if step_spec.kind == "workflow":
 
-        # Normalize to WorkflowStepOutput
-        if isinstance(raw_output, WorkflowStepOutput):
-            output = raw_output
-        else:
-            output = WorkflowStepOutput(
-                artifact=raw_output,
-                next_substate=None,
-                details={},
-                summary="",
-                approved=None,
+            # 1. Execute parent step function to get initial_input
+            parent_return = step_spec.fn(step_input)
+
+            initial_input = None
+            if isinstance(parent_return, dict) and "initial_input" in parent_return:
+                initial_input = parent_return["initial_input"]
+
+            # 2. Run child workflow
+            output = self._run_child_workflow_step(
+                item,
+                step_spec,
+                step_input,
+                initial_input=initial_input,
             )
 
-        # Validate output via schema
-        validated_artifact = self._validate_step_output(step_spec, output)
+            # IMPORTANT: skip validation + normalization for workflow steps
+            validated_artifact = output.artifact
+
+        else:
+            # ---------------------------------------------------------
+            # NORMAL STEP
+            # ---------------------------------------------------------
+            raw_output = step_spec.fn(step_input)
+
+            # Normalize to WorkflowStepOutput
+            if isinstance(raw_output, WorkflowStepOutput):
+                output = raw_output
+            else:
+                output = WorkflowStepOutput(
+                    artifact=raw_output,
+                    next_substate=None,
+                    details={},
+                    summary="",
+                    approved=None,
+                )
+
+            validated_artifact = self._validate_step_output(step_spec, output)
+
+        # Assign validated artifact
         output.artifact = validated_artifact
 
         # ---------------------------------------------------------
@@ -457,8 +638,6 @@ class BaseWorkflowEngine(EngineStorageMixin, ABC):
         # ---------------------------------------------------------
         # DETERMINE NEXT SUBSTATE
         # ---------------------------------------------------------
-        # IMPORTANT: if the step indicates it's blocked (e.g. nested workflow paused),
-        # we DO NOT auto-advance to the default next substate.
         details = output.details or {}
         step_blocked = details.get("blocked") is True
         step_approved = getattr(output, "approved", None)
@@ -467,36 +646,29 @@ class BaseWorkflowEngine(EngineStorageMixin, ABC):
 
         if next_substate is None:
             if step_blocked or step_approved is False:
-                # Stay on the same substate (e.g. run_child) when blocked
                 next_substate = old_substate
             else:
-                # Normal case: advance along the default path
                 next_substate = self.definition.get_default_next_substate(
                     status.branch,
                     old_substate,
                 )
 
-        # Move to next substate (may be same as old_substate if blocked)
         if next_substate is not None:
             item.status.substate = next_substate
 
-        new_substate = item.status.substate  # capture AFTER moving
+        new_substate = item.status.substate
 
         # ---------------------------------------------------------
-        # POST-STEP APPROVAL LOGIC (Model B)
-        # 1. Default: approval depends on whether the *new* substate requires approval.
-        # 2. OVERRIDE: if the step explicitly sets output.approved, honor it.
+        # POST-STEP APPROVAL LOGIC
         # ---------------------------------------------------------
         requires_approval = self.substate_requires_approval(
             status.branch,
             new_substate,
         )
 
-        # Default behavior
         item.status.requires_approval = requires_approval
         item.status.approved = not requires_approval
 
-        # Critical: honor step override (e.g., run_child / call_workflow)
         if step_approved is not None:
             item.status.approved = step_approved
             item.status.requires_approval = not step_approved
@@ -556,13 +728,16 @@ class BaseWorkflowEngine(EngineStorageMixin, ABC):
             # 2. TERMINAL CONDITION: no next substate
             # ---------------------------------------------------------
             next_substate = self.definition.get_default_next_substate(branch, substate)
-            if next_substate is None:
+
+            # ⭐ Only complete if the CURRENT step has already run
+            if next_substate is None and substate in item.step_outputs:
                 return {
                     "item_id": item_id,
                     "blocked": False,
                     "reason": "complete",
                     "substate": substate,
                 }
+
 
             # ---------------------------------------------------------
             # 3. Defensive: no step spec → treat as terminal
@@ -947,6 +1122,11 @@ class BaseWorkflowEngine(EngineStorageMixin, ABC):
             return item
 
         return None
+
+    def _is_workflow_step(self, spec: WorkflowStepSpec) -> bool:
+        return spec.kind == "workflow" and spec.child_workflow_name is not None
+
+
 
 
 

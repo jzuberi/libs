@@ -98,6 +98,8 @@ class WorkflowItem(BaseModel):
     label: Optional[str] = None
     style: Dict[str, Any] = Field(default_factory=dict)
 
+    initial_input: dict | None = None
+
     # NEW: asset registry (markdown, images, attachments)
     assets: Dict[str, str] = Field(default_factory=dict)
 
@@ -140,6 +142,7 @@ class WorkflowStepInput(BaseModel):
     item: WorkflowItem
     engine: "BaseWorkflowEngine"
     context: Optional[Dict[str, Any]] = None
+    step_name: Optional[str] = None
 
     class Config:
         arbitrary_types_allowed = True
@@ -151,6 +154,7 @@ class WorkflowStepOutput(BaseModel):
     summary: str
     next_substate: Optional[str] = None
     requires_approval: bool = False
+    approved: Optional[bool] = None
 
     class Config:
         validate_assignment = True
@@ -184,6 +188,9 @@ class WorkflowStepSpec(BaseModel):
     consumes: Optional[List[str]] = None       # Which steps must run before this?
     produces: Optional[List[str]] = None       # What conceptual outputs does it create?
     agent_hints: Optional[str] = None          # Optional natural-language hints for LLM agents
+
+    child_workflow_name: str | None = None
+    kind: str = "function"
 
     class Config:
         arbitrary_types_allowed = True

@@ -1,12 +1,26 @@
 from functools import wraps
-from .utils.tracing import workflow_step
+from .utils.tracing import workflow_step_internal
 from .models import WorkflowStepSpec
 from abc import ABCMeta
 
 from .workflow_definition import WorkflowDefinition
 from .base_workflow_engine import BaseWorkflowEngine
 from .loader import WorkflowLoader
+from .step_context import StepContext
 
+class ChildWorkflowProxy:
+    def __init__(self, engine, parent_item, step_spec):
+        self.engine = engine
+        self.parent_item = parent_item
+        self.step_spec = step_spec
+
+    def run(self, **kwargs):
+        # Store kwargs as initial_input
+        return self.engine._run_child_workflow_step(
+            parent_item=self.parent_item,
+            step_spec=self.step_spec,
+            initial_input=kwargs,
+        )
 
 def step(
     name: str,
@@ -21,7 +35,7 @@ def step(
     Public ergonomic decorator for defining workflow steps.
     """
     def decorator(fn):
-        wrapped = workflow_step(name)(fn)
+        wrapped = workflow_step_internal(name)(fn)
 
         wrapped._step_spec = WorkflowStepSpec(
             name=name,
@@ -32,11 +46,86 @@ def step(
             consumes=consumes or [],
             produces=produces or [],
             agent_hints=agent_hints,
+            child_workflow_name=None,
+            kind="function",
         )
 
         return wrapped
 
     return decorator
+
+
+
+
+def workflow_step(
+    child_workflow_name: str,
+    name: str | None = None,
+    output_schema=None,
+    human_name: str | None = None,
+    description: str | None = None,
+    consumes: list[str] | None = None,
+    produces: list[str] | None = None,
+    agent_hints: str | None = None,
+):
+    """
+    Public decorator for defining a step that runs a child workflow.
+
+    IMPORTANT:
+    - Workflow steps DO NOT use workflow_step_internal.
+      That wrapper is only for normal steps and assumes the function
+      returns a WorkflowStepOutput, which workflow steps do NOT do.
+    - Workflow steps return a dict (e.g., {"initial_input": {...}})
+      so run_next_step can extract initial_input.
+    """
+
+    def decorator(fn):
+        step_name = name or fn.__name__
+
+        @wraps(fn)
+        def wrapped(input):
+            # Build StepContext
+            ctx = StepContext(input)
+
+            # Build child workflow proxy
+            child = ChildWorkflowProxy(
+                engine=input.engine,
+                parent_item=input.item,
+                step_spec=wrapped._step_spec,
+            )
+
+            # Call user function: fn(ctx, child)
+            try:
+                result = fn(ctx, child)
+            except TypeError as e:
+                raise TypeError(
+                    f"Workflow step '{step_name}' must accept (ctx, child). "
+                    f"Original error: {e}"
+                )
+
+            # Pass through the return value so run_next_step can read it
+            return result if result is not None else {}
+
+        # Attach WorkflowStepSpec
+        wrapped._step_spec = WorkflowStepSpec(
+            name=step_name,
+            fn=wrapped,
+            output_schema=output_schema,
+            human_name=human_name,
+            description=description,
+            consumes=consumes or [],
+            produces=produces or [],
+            agent_hints=agent_hints,
+            child_workflow_name=child_workflow_name,
+            kind="workflow",
+        )
+
+        return wrapped
+
+    return decorator
+
+
+
+
 
 def workflow(
     name: str,

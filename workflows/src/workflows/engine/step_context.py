@@ -54,6 +54,29 @@ class StepContext:
     def get_typed_output(self, step_name: str):
         return self.engine.load_typed_step_output(self.item.id, step_name)
 
+    def get_self_output(self):
+        """
+        Return this step's previously materialized *current* output
+        (raw or edited). If the step has never run before, return None
+        so the step's own logic can run normally.
+        """
+        step_name = self.input.step_name
+        if not step_name:
+            return None
+
+        record = self.item.step_outputs.get(step_name)
+        if not record:
+            return None
+
+        # Only return if a current exists
+        if record.current is not None:
+            return record.current
+
+        # If no current exists, treat as "never run"
+        return None
+
+
+
     # ---------------------------------------------------------
     # Metadata / Style
     # ---------------------------------------------------------

@@ -13,7 +13,7 @@ Internal engine modules remain private.
 # ---------------------------------------------------------
 # Decorators (workflow authoring)
 # ---------------------------------------------------------
-from .engine.decorators import workflow, step
+from .engine.decorators import workflow, step, workflow_step
 
 # ---------------------------------------------------------
 # Step execution helpers
@@ -52,6 +52,7 @@ __all__ = [
     # Decorators
     "workflow",
     "step",
+    "workflow_step",
 
     # Step helpers
     "StepContext",
