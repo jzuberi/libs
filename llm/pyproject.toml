@@ -1,0 +1,11 @@
+[project]
+name = "llm"
+version = "0.0.1"
+description = "Small LLM engine with JSON-first modes"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"

@@ -1,0 +1,26 @@
+2026-04-18 01:15:12 [DEBUG] llm.engine: === MODE: general_answer ===
+2026-04-18 01:15:12 [DEBUG] llm.engine: ARGS: ('How do I choose a hobby?',)
+2026-04-18 01:15:12 [DEBUG] llm.engine: KWARGS: {}
+2026-04-18 01:15:12 [DEBUG] llm.engine: PROMPT:
+
+        You are a thoughtful and strategic expert.
+
+        Your ONLY task is to answer the user's question.
+
+        You MUST respond in valid JSON with EXACTLY this structure:
+
+        {
+          "answer": "your answer here"
+        }
+
+        No preamble. No explanation. No additional keys.
+
+        Question: How do I choose a hobby?
+        
+2026-04-18 01:15:13 [DEBUG] llm.engine: RAW OUTPUT:
+{
+  "answer": "Consider your interests, skills, and available time to narrow down options. Research different hobbies, talk to people who enjoy them, and try out a few to find the best fit for you."
+}
+2026-04-18 01:15:13 [DEBUG] llm.engine: RESULT: answer='Consider your interests, skills, and available time to narrow down options. Research different hobbies, talk to people who enjoy them, and try out a few to find the best fit for you.'
+2026-04-18 01:15:13 [DEBUG] llm.engine: === END MODE: general_answer ===
+
