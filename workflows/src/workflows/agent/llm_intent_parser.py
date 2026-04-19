@@ -89,7 +89,7 @@ When the user mentions an item by label, map it to the correct item_id.
     """)
 
     try:
-        raw = engine.agent_llm.invoke({"question": prompt})
+        raw = engine.agent_llm.general_answer(prompt).answer
         intent_data = raw
 
         print(intent_data)
