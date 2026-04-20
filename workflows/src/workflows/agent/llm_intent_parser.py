@@ -53,7 +53,7 @@ When the user mentions an item by label, map it to the correct item_id.
               - "provide_item_id" (when they specify an item_id to use)
 
             Users may refer to items by their human-readable labels.
-When the user mentions an item by label, map it to the correct item_id.
+            When the user mentions an item by label, map it to the correct item_id.
 
 
             Otherwise, treat it as a normal intent from the list.
@@ -89,7 +89,7 @@ When the user mentions an item by label, map it to the correct item_id.
     """)
 
     try:
-        raw = engine.agent_llm.general_answer(prompt).answer
+        raw = engine.agent_llm.metadata(prompt).dict()
         intent_data = raw
 
         print(intent_data)

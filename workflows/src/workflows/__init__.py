@@ -19,7 +19,7 @@ from .engine.decorators import workflow, step, workflow_step
 # Step execution helpers
 # ---------------------------------------------------------
 from .engine.step_context import StepContext
-from .engine.models import WorkflowStepOutput  # optional but useful
+from .engine.models import WorkflowStepOutput, WorkflowItem
 
 
 # ---------------------------------------------------------
@@ -57,6 +57,7 @@ __all__ = [
     # Step helpers
     "StepContext",
     "WorkflowStepOutput",
+    "WorkflowItem",
 
     # Engine access
     "load_engine",

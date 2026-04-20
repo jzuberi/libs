@@ -661,13 +661,15 @@ class BaseWorkflowEngine(EngineStorageMixin, ABC):
         # ---------------------------------------------------------
         # POST-STEP APPROVAL LOGIC
         # ---------------------------------------------------------
-        requires_approval = self.substate_requires_approval(
-            status.branch,
-            new_substate,
-        )
 
-        item.status.requires_approval = requires_approval
-        item.status.approved = not requires_approval
+        if next_substate is not None:
+            requires_approval = self.substate_requires_approval(
+                status.branch,
+                new_substate,
+            )
+
+            item.status.requires_approval = requires_approval
+            item.status.approved = not requires_approval
 
         if step_approved is not None:
             item.status.approved = step_approved
@@ -689,9 +691,6 @@ class BaseWorkflowEngine(EngineStorageMixin, ABC):
         )
 
         return output
-
-
-       
 
     def run_until_blocked(self, item_id: str, context=None):
         """
@@ -796,10 +795,6 @@ class BaseWorkflowEngine(EngineStorageMixin, ABC):
                 # Reset approval for the NEXT substate so it will actually run.
                 # ---------------------------------------------------------
                 status.approved = False
-                status.requires_approval = self.definition.step_requires_approval(
-                    branch,
-                    next_substate,
-                )
 
         # Save updated child
         self.save_item(item)

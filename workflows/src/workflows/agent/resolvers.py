@@ -28,7 +28,7 @@ def resolve_item_reference(
     # Try deterministic resolution
     result = engine.resolve_candidates(reference)
 
-    label = self.engine.get_item_label(result.chosen_id)
+    label = engine.get_item_label(result.chosen_id)
     
     if result.chosen_id is None:
         item_labels = [item.label for item in engine.list_items()]

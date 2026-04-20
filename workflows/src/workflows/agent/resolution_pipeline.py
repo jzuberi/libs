@@ -29,9 +29,11 @@ def resolve_item(engine, intent_data):
         User referred to: {intent_data.item_id}
         Items: {[item.description for item in engine.list_items()]}
         Which item is the user referring to?
-        Return ONLY the item id or null.
+        Respond ONLY with valid JSON. 
+        Key is item_id. 
+        Do not include commentary.
         """
-        result = engine.agent_llm.invoke({"question": prompt})
+        result = engine.agent_llm.metadata(prompt).dict()
         if isinstance(result, dict) and result.get("item_id"):
             return result["item_id"], "Resolved via LLM."
 
