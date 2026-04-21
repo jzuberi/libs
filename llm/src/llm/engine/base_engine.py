@@ -1,4 +1,5 @@
 from pydantic import create_model
+import time
 
 from ..parsing.json_parser import DefaultJSONParser
 from ..backends.timeout import TimeoutRunnable
@@ -10,14 +11,16 @@ from ..schemas.classify import ClassificationSchema
 
 from ..logging.decorators import log_engine_call
 from ..logging.logger import get_logger
+
 logger = get_logger("llm.engine")
 
 
 class BaseLLMEngine:
-    def __init__(self, backend, parser=None, timeout: int = 10, debug: bool = True):
+    def __init__(self, backend, parser=None, timeout: int = 10, delay: int = 3, debug: bool = True):
         self.backend = backend
         self.parser = parser or DefaultJSONParser()
         self.timeout = timeout
+        self.delay = delay
         self.debug = debug
 
     # -------------------------
@@ -27,24 +30,18 @@ class BaseLLMEngine:
         if self.debug:
             print(f"[LLM DEBUG] {label}:\n{value}\n")
 
-
     # -------------------------
     # INTERNAL BACKEND CALL
     # -------------------------
-    
 
     def _call_backend(self, prompt: str) -> str:
-        if self.debug:
-            logger.debug(f"PROMPT:\n{prompt}")
 
         runner = TimeoutRunnable(self.backend.generate, timeout=self.timeout)
         raw = runner(prompt)
 
-        if self.debug:
-            logger.debug(f"RAW OUTPUT:\n{raw}")
+        time.sleep(self.delay)
 
         return raw
-
 
     # -------------------------
     # GENERAL ANSWER

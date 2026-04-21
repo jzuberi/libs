@@ -27,7 +27,7 @@ def lmstudio_is_serving(model_name: str) -> bool:
         return False
 
 
-def get_backend(model: str, timeout: int = 10):
+def get_backend(model: str, timeout: int = 30):
     """
     Auto-select backend based on whether LM Studio is serving the model.
     """

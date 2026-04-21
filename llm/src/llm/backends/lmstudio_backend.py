@@ -6,7 +6,7 @@ class LMStudioBackend(BaseBackend):
     LM Studio backend using your working ChatOpenAI configuration.
     """
 
-    def __init__(self, model: str, timeout: int = 10):
+    def __init__(self, model: str, timeout: int = 30):
         self.model = model
         self.timeout = timeout
 
@@ -17,7 +17,7 @@ class LMStudioBackend(BaseBackend):
             temperature=0.1,
             timeout=timeout,
         )
-        
+
     def generate(self, prompt: str) -> str:
         msg = self.client.invoke(prompt)
 

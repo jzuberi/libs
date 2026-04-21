@@ -6,7 +6,7 @@ class TimeoutRunnable:
     Returns either the callable's result (string) or a JSON-like error dict.
     """
 
-    def __init__(self, func, timeout: int = 10):
+    def __init__(self, func, timeout: int = 30):
         self.func = func
         self.timeout = timeout
 
