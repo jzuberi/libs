@@ -1,16 +1,20 @@
-from dataclasses import dataclass
 from typing import Optional, TYPE_CHECKING
+from dataclasses import dataclass, field
 
-# Only import WorkflowIntent for type checking, not at runtime
-if TYPE_CHECKING:
-    from .intent_parser import WorkflowIntent
+@dataclass
+class PendingIntent:
+    intent: str
+    parameters: dict
+    missing: list[str]
+    original_message: str
 
 
 @dataclass
 class SessionState:
     last_item_id: Optional[str] = None
     last_intent: Optional[str] = None
+    context: dict = field(default_factory=dict)
 
-    # Pending-intent support
-    pending_intent: Optional["WorkflowIntent"] = None
-    pending_resolution: Optional[str] = None
+    pending_intent: Optional[PendingIntent] = None   # NEW
+    last_listed_items: list[str] = field(default_factory=list)
+    active_item_id: Optional[str] = None

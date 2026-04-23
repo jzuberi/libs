@@ -1,13 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any, Dict, Optional
+from dataclasses import dataclass, field
 
-from .session import SessionState
-from .contract.loader import load_agent_contract
-
-CONTRACT = load_agent_contract()
-
+from ..session import SessionState
 
 # ---------------------------------------------------------
 # Intent Model
@@ -15,22 +11,41 @@ CONTRACT = load_agent_contract()
 
 @dataclass
 class WorkflowIntent:
+    """
+    A Stage-1 or Stage-2 intent representation.
+
+    Stage 1:
+        - intent (required)
+        - reasoning (optional)
+        - parameters = {} (empty)
+
+    Stage 2:
+        - parameters filled in according to contract
+    """
+
     intent: str
-    item_id: Optional[str] = None
-    step_name: Optional[str] = None
-    edit_text: Optional[str] = None
-    parameters: Optional[Dict[str, Any]] = None
+    parameters: Dict[str, Any] = field(default_factory=dict)
     reasoning: Optional[str] = None
 
     def to_dict(self):
         return {
             "intent": self.intent,
-            "item_id": self.item_id,
-            "step_name": self.step_name,
-            "edit_text": self.edit_text,
             "parameters": self.parameters,
             "reasoning": self.reasoning,
         }
+
+    def with_parameters(self, new_params: Dict[str, Any]) -> "WorkflowIntent":
+        """
+        Return a new WorkflowIntent with merged parameters.
+        Useful for merging Stage-2 extraction or pending-intent resolution.
+        """
+        merged = dict(self.parameters)
+        merged.update(new_params)
+        return WorkflowIntent(
+            intent=self.intent,
+            parameters=merged,
+            reasoning=self.reasoning,
+        )
 
 
 
@@ -56,7 +71,7 @@ def extract_edit_text(text: str) -> Optional[str]:
 # Contract-aware rule-based parser
 # ---------------------------------------------------------
 
-def parse_intent(message: str, session: SessionState) -> WorkflowIntent:
+def parse_intent(message: str, session: SessionState, CONTRACT) -> WorkflowIntent:
     text = message.strip().lower()
 
     # ---------------------------------------------------------
