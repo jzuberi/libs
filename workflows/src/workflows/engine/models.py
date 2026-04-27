@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 import json
 
 from pydantic import BaseModel, Field, validator
@@ -143,9 +143,11 @@ class WorkflowStepInput(BaseModel):
     engine: "BaseWorkflowEngine"
     context: Optional[Dict[str, Any]] = None
     step_name: Optional[str] = None
+    parsed_input: Any = None  # ✅ NEW
 
     class Config:
         arbitrary_types_allowed = True
+
 
 
 class WorkflowStepOutput(BaseModel):
@@ -191,6 +193,8 @@ class WorkflowStepSpec(BaseModel):
 
     child_workflow_name: str | None = None
     kind: str = "function"
+
+    input_schema: Optional[Type[BaseModel]] = None
 
     class Config:
         arbitrary_types_allowed = True

@@ -12,9 +12,10 @@ from .resolution.resolver_core import resolve_item_reference
 from .session import SessionState
 from .stepcontext_commands import StepContextAgentMixin
 from .parsing.general_parser import parse_intent_with_llm
-from .parsing.parameter_extraction import extract_parameters_with_llm
+from .parsing.parameter_extraction import build_relevant_context_for_intent, extract_parameters_with_llm
 
 from .contract.loader import load_agent_contract
+from .ontologies.ontology import WorkflowOntologyRegistry
 
 from .dispatch.dispatcher import dispatch_intent
 
@@ -24,19 +25,11 @@ from .context.normalization import normalize_step, normalize_item
 # workflows/agent/agent.py
 
 from .handlers.handlers import (
-    handle_query_current_item,
-    handle_query_item,
     handle_list_workflow_items,
-    handle_run_next_step,
-    handle_approve_substate,
-    handle_export,
-    handle_unknown_intent,
     handle_describe_workflow,
-    handle_show_schema,
-    handle_explain_schema,
-    handle_show_step_output,
-    handle_list_step_outputs,
+    handle_unknown_intent,
 )
+
 
 class WorkflowAgent(StepContextAgentMixin):
 
@@ -59,6 +52,8 @@ class WorkflowAgent(StepContextAgentMixin):
             }
         }
 
+        self.workflow_ontology = WorkflowOntologyRegistry()
+
 
         # --------------------------------------------------------------
         # Populate steps namespace using engine definition
@@ -73,18 +68,9 @@ class WorkflowAgent(StepContextAgentMixin):
 
         # Instance-level handler map (safe for overrides)
         self.handler_map = {
-            "query_current_item": handle_query_current_item,
-            "query_item": handle_query_item,
             "list_workflow_items": handle_list_workflow_items,
-            "run_next_step": handle_run_next_step,
-            "approve_substate": handle_approve_substate,
-            "export_item": handle_export,
             "unknown_intent": handle_unknown_intent,
             "describe_workflow": handle_describe_workflow,
-            "show_schema": handle_show_schema,
-            "explain_schema": handle_explain_schema,
-            "show_step_output": handle_show_step_output,
-            "list_step_outputs": handle_list_step_outputs,
         }
 
     def _get_handler(self, intent_name: str):
@@ -93,8 +79,6 @@ class WorkflowAgent(StepContextAgentMixin):
         Falls back to unknown_intent.
         """
         return self.handler_map.get(intent_name, handle_unknown_intent)
-
-
 
     def _idle_help(self):
         return (
@@ -216,9 +200,22 @@ class WorkflowAgent(StepContextAgentMixin):
                 pending_context=self.session.pending_intent,
             )
 
-            # If this is a clarification for a pending intent → deterministic handler
             if intent.intent == "clarify_pending" and self.session.pending_intent is not None:
                 return self._handle_pending_message(message, trace)
+
+            """
+
+            # Stage 1.5: derive relevant_context for this intent
+            relevant_context = build_relevant_context_for_intent(
+                self,
+                intent,
+            )
+            """
+
+            relevant_context = build_relevant_context_for_intent(
+                self,
+                intent,
+            )
 
             # Stage 2: parameter extraction
             params = extract_parameters_with_llm(
@@ -228,8 +225,10 @@ class WorkflowAgent(StepContextAgentMixin):
                 intent,
                 self.session,
                 workflow_desc,
+                relevant_context=relevant_context,
             )
             intent = intent.with_parameters(params)
+
 
             if trace:
                 trace.record_llm_intent(intent.to_dict())
@@ -266,8 +265,6 @@ class WorkflowAgent(StepContextAgentMixin):
         # 4. Dispatch the intent (resolve → maybe pending → handler)
         # --------------------------------------------------------------
         return dispatch_intent(self, intent, trace)
-
-
 
     # ------------------------------------------------------------------
     # Pending helpers

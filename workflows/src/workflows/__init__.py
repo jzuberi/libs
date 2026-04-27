@@ -44,7 +44,8 @@ except ImportError:
 # Agent
 # ---------------------------------------------------------
 from .agent.workflow_agent import WorkflowAgent
-
+from .agent.contract.loader import load_agent_contract
+from .agent.context.decorators import updates_context
 # ---------------------------------------------------------
 # Public API surface
 # ---------------------------------------------------------
@@ -65,6 +66,8 @@ __all__ = [
 
     # Agent
     "WorkflowAgent",
+    "load_agent_contract",
+    "updates_context",
 ]
 
 # Optional exports if run_workflow exists

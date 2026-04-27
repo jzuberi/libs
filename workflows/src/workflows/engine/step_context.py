@@ -26,6 +26,18 @@ class StepContext:
         self._requires_approval: bool = False
 
     # ---------------------------------------------------------
+    # NEW: Typed Input Model (Pattern A)
+    # ---------------------------------------------------------
+
+    @property
+    def input_model(self):
+        """
+        Return the parsed, validated input schema instance for this step,
+        or None if the step has no input_schema or no context was provided.
+        """
+        return self.input.parsed_input
+
+    # ---------------------------------------------------------
     # Step Output
     # ---------------------------------------------------------
 
@@ -74,8 +86,6 @@ class StepContext:
 
         # If no current exists, treat as "never run"
         return None
-
-
 
     # ---------------------------------------------------------
     # Metadata / Style

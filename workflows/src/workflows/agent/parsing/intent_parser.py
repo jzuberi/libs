@@ -122,26 +122,11 @@ def parse_intent(message: str, session: SessionState, CONTRACT) -> WorkflowInten
     # Existing commands (contract-aware)
     # ---------------------------------------------------------
 
-    if text.startswith("run next") or "run the next step" in text:
-        return WorkflowIntent(intent="run_next_step", item_id=session.last_item_id)
-
-    if text.startswith("approve"):
-        return WorkflowIntent(intent="approve_substate", item_id=session.last_item_id)
-
-    if text.startswith("export"):
-        return WorkflowIntent(intent="export", item_id=session.last_item_id)
-
-    if "status" in text or "what's going on" in text:
-        return WorkflowIntent(intent="query_item", item_id=session.last_item_id)
-
     if "list" in text and "items" in text:
         return WorkflowIntent(intent="query_workflow")
 
     if "describe" in text and "workflow" in text:
         return WorkflowIntent(intent="describe_workflow")
-
-    if "list step outputs" in text:
-        return WorkflowIntent(intent="list_step_outputs")
 
 
     # ---------------------------------------------------------

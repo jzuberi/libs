@@ -310,14 +310,9 @@ class BaseWorkflowEngine(EngineStorageMixin, ABC):
 
 
     def default_label_fn(self, item: WorkflowItem) -> str:
-        """
-        Default human-readable label for items.
-        Uses created_at timestamp in a friendly format.
-        """
         dt = item.created_at
-        return dt.strftime("Item from %b %d, %Y at %I:%M %p")
-
-
+        short_id = item.id[:6]
+        return dt.strftime(f"Run %b %d %Y %I:%M %p ({short_id})")
 
 
     def _load_existing_items(self):
@@ -466,15 +461,8 @@ class BaseWorkflowEngine(EngineStorageMixin, ABC):
 
     def _run_child_workflow_step(self, item, step_spec, step_input, initial_input=None):
 
-        """
-        Execute a workflow step that runs a child workflow.
-        Step 3: minimal implementation that mirrors your existing run_child logic.
-        """
         child_workflow_name = step_spec.child_workflow_name
         child_engine_cls = WorkflowLoader.load_engine(child_workflow_name)
-
-        print('run child workflow step initial input')
-        print(initial_input)
 
         # Create child engine sharing the same registry
         child_engine = child_engine_cls(
@@ -498,9 +486,18 @@ class BaseWorkflowEngine(EngineStorageMixin, ABC):
                 initial_input=initial_input,
             )
 
+        # ⭐ NEW: parse initial_input for the child workflow's first step
+        if initial_input and step_spec.input_schema:
+            parsed_input = step_spec.input_schema(**initial_input)
+        else:
+            parsed_input = None
+
+        # ⭐ UPDATED: inject parsed_input into the step_input
+        step_input.parsed_input = parsed_input
 
         # Run child workflow
         result = child_engine.run_until_blocked(child_item.id)
+
 
         # Extract final export if complete
         export_record = child_item.step_outputs.get("export_data")
@@ -543,20 +540,29 @@ class BaseWorkflowEngine(EngineStorageMixin, ABC):
         # ---------------------------------------------------------
         first_step_name = self.definition.workflow_paths[status.branch][0]
 
+        # ⭐ NEW: choose the raw context
         if old_substate == first_step_name and item.initial_input:
-            step_input = WorkflowStepInput(
-                item=item,
-                engine=self,
-                context=item.initial_input,
-                step_name=step_spec.name,
-            )
+            raw_context = item.initial_input
         else:
-            step_input = WorkflowStepInput(
-                item=item,
-                engine=self,
-                context=context or {},
-                step_name=step_spec.name,
-            )
+            raw_context = context or {}
+
+        # ⭐ NEW: parse input schema if present
+        if step_spec.input_schema is not None:
+            parsed_input = step_spec.input_schema(**raw_context)
+        else:
+            parsed_input = None
+
+        # ⭐ UPDATED: include parsed_input
+        step_input = WorkflowStepInput(
+            item=item,
+            engine=self,
+            context=raw_context,
+            step_name=step_spec.name,
+            parsed_input=parsed_input,   # ← NEW
+        )
+
+        # STEP START TRACE...
+
 
         # STEP START TRACE
         self._log_trace(

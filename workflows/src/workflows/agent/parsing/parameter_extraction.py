@@ -5,6 +5,8 @@ from datetime import datetime
 from pathlib import Path
 from enum import Enum
 from pydantic import BaseModel
+from typing import Any, Dict, Optional
+
 
 def jsonable(obj):
     """
@@ -40,6 +42,56 @@ def jsonable(obj):
     return obj
 
 
+
+def build_relevant_context_for_intent(agent, intent):
+    """
+    Build relevant context for an intent based on ontology metadata
+    and the intent's declared uses_ontology list.
+
+    Returns a dict like:
+    {
+        "ideas": [...],
+        "asset_definitions": [...],
+    }
+    or None if nothing applies.
+    """
+
+    # 1. Read intent metadata
+    meta = agent.contract["intents"].get(intent.intent, {})
+    type_names = meta.get("uses_ontology")
+    if not type_names:
+        return None
+
+    session = agent.session.context
+    ontology = agent.workflow_ontology
+
+    out = {}
+
+    # 2. For each ontology type the intent uses
+    for type_name in type_names:
+        ot = ontology.get(type_name)
+        if not ot:
+            continue
+
+        # 3. Where do instances of this type live in session?
+        session_key = ot.metadata.get("session_key")
+        if not session_key:
+            continue
+
+        objects = session.get(session_key) or []
+        if not objects:
+            continue
+
+        # 4. How should this appear in relevant_context?
+        context_key = ot.metadata.get("context_key", type_name.lower())
+
+        # 5. Serialize objects using ontology rules
+        out[context_key] = [ot.serialize(obj) for obj in objects]
+
+    return out or None
+
+
+
 def extract_parameters_with_llm(
     engine,
     contract,
@@ -47,66 +99,92 @@ def extract_parameters_with_llm(
     intent,
     session,
     workflow_description: str,
+    relevant_context=None,
 ):
-    """
-    Stage 2: LLM-powered parameter extraction.
-    Contract-aware, context-aware, workflow-aware.
-    Returns a dict of extracted parameters.
-    """
-
-    # Get parameter schema for this intent
     meta = contract["intents"].get(intent.intent, {})
     param_specs = meta.get("parameters", {})
+    extraction_instructions = meta.get("extraction_instructions", "").strip()
 
-    # Build JSON schema for the LLM
+    # Build schema block
     schema_lines = []
     for name, spec in param_specs.items():
         required = spec.get("required", False)
         ptype = spec.get("type", "string")
         schema_lines.append(f'- "{name}": type={ptype}, required={required}')
-
     schema_block = "\n".join(schema_lines)
 
-    # Build context block
-    safe_context = jsonable(session.context)
+    # Minimal session context
+    minimal_context = {
+        "current_step_name": session.context.get("current_step_name"),
+        "current_item_id": session.context.get("current_item_id"),
+    }
+    context_block = json.dumps(jsonable(minimal_context), indent=2)
 
-    context_block = json.dumps(safe_context, indent=2)
+    # ------------------------------------------------------------
+    # Relevant context block (ontology-driven)
+    # ------------------------------------------------------------
+    relevant_block = ""
+    if relevant_context:
+        lines = ["Relevant context:"]
+        for key, items in relevant_context.items():
+            lines.append(f"{key}:")
+            for item in items:
+                if isinstance(item, dict):
+                    # Serialize dicts as "k: v, k2: v2"
+                    serialized = ", ".join(f"{k}: {v}" for k, v in item.items())
+                    lines.append(f"  - {serialized}")
+                else:
+                    # Fallback for non-dict items
+                    lines.append(f"  - {item}")
+        relevant_block = "\n".join(lines)
 
+    # ------------------------------------------------------------
+    # Build prompt
+    # ------------------------------------------------------------
     prompt = textwrap.dedent(f"""
         You are a workflow assistant. Extract parameters for the intent "{intent.intent}".
 
         User message:
         {user_message}
 
-        Workflow description:
-        {workflow_description}
-
-        Session context (may contain case_id, item_id, step_name, etc.):
-        {context_block}
-
         Parameter schema for this intent:
         {schema_block}
 
-        Extract parameters according to the schema.
-        Use context when the user refers indirectly (e.g., "it", "that case").
-        Use workflow labels to resolve references.
-        If a parameter cannot be extracted, set it to null.
+        Extraction instructions for this intent:
+        {extraction_instructions}
 
-        Return ONLY a JSON object with:
-        {{
-            "parameters": {{
-                <param_name>: <value or null>
-            }},
-            "reasoning": "<brief explanation>"
-        }}
-
-        Respond ONLY with valid JSON. No commentary.
+        Minimal session context:
+        {context_block}
     """)
 
-    raw = engine.agent_llm.metadata(prompt).dict()
+    if relevant_block:
+        prompt += f"\n\n{relevant_block}\n"
 
+    prompt += textwrap.dedent("""
+        Follow these rules:
+        - Extract parameters strictly according to the schema.
+        - Apply the extraction instructions above.
+        - Use context only when the user refers indirectly (e.g., "it", "that one").
+        - If a parameter cannot be extracted, set it to null.
+        - Return ONLY valid JSON. No commentary.
+
+        Return JSON in this format:
+        {
+            "parameters": {
+                <param_name>: <value or null>
+            },
+            "reasoning": "<brief explanation>"
+        }
+    """)
+
+    print('parameter extraction prompt: ')
+    print(prompt)
+
+    # ------------------------------------------------------------
+    # LLM call
+    # ------------------------------------------------------------
+    raw = engine.agent_llm.metadata(prompt).dict()
     if not isinstance(raw, dict):
         return {}
 
-    params = raw.get("parameters", {})
-    return params
+    return raw.get("parameters", {})

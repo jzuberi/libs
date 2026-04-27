@@ -30,6 +30,9 @@ def step(
     consumes: list[str] | None = None,
     produces: list[str] | None = None,
     agent_hints: str | None = None,
+
+    # ⭐ NEW
+    input_schema=None,
 ):
     """
     Public ergonomic decorator for defining workflow steps.
@@ -48,12 +51,14 @@ def step(
             agent_hints=agent_hints,
             child_workflow_name=None,
             kind="function",
+
+            # ⭐ NEW
+            input_schema=input_schema,
         )
 
         return wrapped
 
     return decorator
-
 
 
 
@@ -66,16 +71,12 @@ def workflow_step(
     consumes: list[str] | None = None,
     produces: list[str] | None = None,
     agent_hints: str | None = None,
+
+    # ⭐ NEW
+    input_schema=None,
 ):
     """
     Public decorator for defining a step that runs a child workflow.
-
-    IMPORTANT:
-    - Workflow steps DO NOT use workflow_step_internal.
-      That wrapper is only for normal steps and assumes the function
-      returns a WorkflowStepOutput, which workflow steps do NOT do.
-    - Workflow steps return a dict (e.g., {"initial_input": {...}})
-      so run_next_step can extract initial_input.
     """
 
     def decorator(fn):
@@ -83,29 +84,17 @@ def workflow_step(
 
         @wraps(fn)
         def wrapped(input):
-            # Build StepContext
             ctx = StepContext(input)
 
-            # Build child workflow proxy
             child = ChildWorkflowProxy(
                 engine=input.engine,
                 parent_item=input.item,
                 step_spec=wrapped._step_spec,
             )
 
-            # Call user function: fn(ctx, child)
-            try:
-                result = fn(ctx, child)
-            except TypeError as e:
-                raise TypeError(
-                    f"Workflow step '{step_name}' must accept (ctx, child). "
-                    f"Original error: {e}"
-                )
-
-            # Pass through the return value so run_next_step can read it
+            result = fn(ctx, child)
             return result if result is not None else {}
 
-        # Attach WorkflowStepSpec
         wrapped._step_spec = WorkflowStepSpec(
             name=step_name,
             fn=wrapped,
@@ -117,12 +106,14 @@ def workflow_step(
             agent_hints=agent_hints,
             child_workflow_name=child_workflow_name,
             kind="workflow",
+
+            # ⭐ NEW
+            input_schema=input_schema,
         )
 
         return wrapped
 
     return decorator
-
 
 
 
