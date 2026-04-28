@@ -395,8 +395,6 @@ class Pensive:
 
         return turn
 
-
-
     def _extract_key(self, decision):
         return decision.key
 

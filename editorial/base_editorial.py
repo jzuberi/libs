@@ -25,7 +25,6 @@ from base_models import (
     IdeaProgress,
 )
 
-
 class BaseEditorialEngine:
     """
     Lifecycle:

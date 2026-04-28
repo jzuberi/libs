@@ -46,6 +46,9 @@ except ImportError:
 from .agent.workflow_agent import WorkflowAgent
 from .agent.contract.loader import load_agent_contract
 from .agent.context.decorators import updates_context
+
+from .agent.agentic_edit import LocalFieldOntology, LocalOntology, EditResult, resolve_local_edit
+
 # ---------------------------------------------------------
 # Public API surface
 # ---------------------------------------------------------
@@ -68,6 +71,10 @@ __all__ = [
     "WorkflowAgent",
     "load_agent_contract",
     "updates_context",
+    "LocalFieldOntology",
+    "LocalOntology",
+    "EditResult",
+    "resolve_local_edit",
 ]
 
 # Optional exports if run_workflow exists

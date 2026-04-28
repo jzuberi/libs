@@ -8,6 +8,7 @@ from .base_workflow_engine import BaseWorkflowEngine
 from .loader import WorkflowLoader
 from .step_context import StepContext
 
+
 class ChildWorkflowProxy:
     def __init__(self, engine, parent_item, step_spec):
         self.engine = engine
@@ -15,34 +16,43 @@ class ChildWorkflowProxy:
         self.step_spec = step_spec
 
     def run(self, **kwargs):
-        # Store kwargs as initial_input
         return self.engine._run_child_workflow_step(
             parent_item=self.parent_item,
             step_spec=self.step_spec,
             initial_input=kwargs,
         )
 
+
 def step(
     name: str,
+    input_schema=None,
     output_schema=None,
     human_name: str | None = None,
     description: str | None = None,
     consumes: list[str] | None = None,
     produces: list[str] | None = None,
     agent_hints: str | None = None,
-
-    # ⭐ NEW
-    input_schema=None,
+    mode: str = "function",   # ⭐ NEW
 ):
     """
     Public ergonomic decorator for defining workflow steps.
     """
     def decorator(fn):
-        wrapped = workflow_step_internal(name)(fn)
 
-        wrapped._step_spec = WorkflowStepSpec(
+        # ⭐ NEW: review steps use a no-op function to satisfy validation
+        if mode == "review":
+            def noop(*args, **kwargs):
+                # Engine will skip calling this because kind="review"
+                return {}
+            wrapped = noop
+        else:
+            wrapped = workflow_step_internal(name)(fn)
+
+        kind = "review" if mode == "review" else "function"
+
+        step_spec = WorkflowStepSpec(
             name=name,
-            fn=wrapped,
+            fn=wrapped,                     # ⭐ always callable now
             output_schema=output_schema,
             human_name=human_name,
             description=description,
@@ -50,12 +60,12 @@ def step(
             produces=produces or [],
             agent_hints=agent_hints,
             child_workflow_name=None,
-            kind="function",
-
-            # ⭐ NEW
+            kind=kind,
             input_schema=input_schema,
         )
 
+        # ⭐ Attach spec to the wrapped function
+        wrapped._step_spec = step_spec
         return wrapped
 
     return decorator
@@ -71,8 +81,6 @@ def workflow_step(
     consumes: list[str] | None = None,
     produces: list[str] | None = None,
     agent_hints: str | None = None,
-
-    # ⭐ NEW
     input_schema=None,
 ):
     """
@@ -106,15 +114,12 @@ def workflow_step(
             agent_hints=agent_hints,
             child_workflow_name=child_workflow_name,
             kind="workflow",
-
-            # ⭐ NEW
             input_schema=input_schema,
         )
 
         return wrapped
 
     return decorator
-
 
 
 
@@ -127,7 +132,6 @@ def workflow(
     def decorator(cls):
         step_specs = {}
 
-        # Collect steps
         if steps:
             funcs = steps
         else:
@@ -141,28 +145,23 @@ def workflow(
             spec = fn._step_spec
             step_specs[spec.name] = spec
 
-        # Build WorkflowDefinition
         definition = WorkflowDefinition(
             name=name,
             step_specs=step_specs,
             workflow_paths=cls.workflow_paths,
         )
 
-        # Create dynamic engine subclass
         class GeneratedEngine(BaseWorkflowEngine):
             pass
 
-        # Attach definition
         GeneratedEngine.definition = definition
 
-        # Copy engine methods from workflow class
         if "summarize_item_structured" in cls.__dict__:
             GeneratedEngine.summarize_item_structured = cls.__dict__["summarize_item_structured"]
 
         if "_export_item_impl" in cls.__dict__:
             GeneratedEngine._export_item_impl = cls.__dict__["_export_item_impl"]
 
-        # Inject constructor
         def __init__(self, base_dir, agent_llm=None):
             BaseWorkflowEngine.__init__(
                 self,
@@ -174,11 +173,8 @@ def workflow(
             )
 
         GeneratedEngine.__init__ = __init__
-
-        # Clear abstract methods
         GeneratedEngine.__abstractmethods__ = frozenset()
 
-        # Register engine class
         WorkflowLoader.register(name, GeneratedEngine)
 
         cls.Engine = GeneratedEngine

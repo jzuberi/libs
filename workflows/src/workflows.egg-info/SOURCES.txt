@@ -6,6 +6,7 @@ src/workflows.egg-info/dependency_links.txt
 src/workflows.egg-info/requires.txt
 src/workflows.egg-info/top_level.txt
 src/workflows/agent/__init__.py
+src/workflows/agent/agentic_edit.py
 src/workflows/agent/session.py
 src/workflows/agent/stepcontext_commands.py
 src/workflows/agent/workflow_agent.py
