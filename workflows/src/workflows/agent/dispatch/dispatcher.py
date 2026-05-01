@@ -4,6 +4,7 @@ from ..resolution.resolver_core import resolve_item_reference
 from ..validation.validator_core import validate_intent
 from ..session import PendingIntent
 
+import time
 
 def dispatch_intent(agent, intent, trace=None):
 
@@ -15,7 +16,7 @@ def dispatch_intent(agent, intent, trace=None):
     # 1. Resolve item reference
     # --------------------------------------------------------------
     raw_ref = intent.parameters.get("item_id")
-
+    
     item_id, resolution_msg = resolve_item_reference(
         agent.engine,
         raw_ref,
@@ -72,13 +73,63 @@ def dispatch_intent(agent, intent, trace=None):
         agent.session.context["current_item_id"] = item_id
 
     # --------------------------------------------------------------
-    # 4. Dispatch to handler (NEW: handler(agent, ...))
+    # 4. Dispatch to handler
     # --------------------------------------------------------------
     handler = agent._get_handler(intent.intent)
-
     raw_objects, user_output = handler(agent, intent, item_id, resolution_msg)
 
     if trace:
         trace.record_agent_response(user_output)
 
+    # --------------------------------------------------------------
+    # 5. AUTO‑ADVANCE WORKFLOW (incremental)
+    # --------------------------------------------------------------
+    # Only advance if the handler approved the substate
+    # (engine tracks this internally)
+    while True:
+
+        # Capture old substate
+        item = agent.engine.load_item(item_id)
+        old_substate = item.status.substate
+
+        if item.status.requires_approval and not item.status.approved:
+            break
+
+        # Run exactly one step
+
+        step_result = None
+
+        try:
+            step_result = agent.engine.run_next_step(item_id)
+        except:
+            pass
+
+        # If nothing ran, break
+        if not step_result:
+            break
+
+        # Update session context from step output
+        agent._update_session_context_from_step_output(old_substate)
+
+        # Reload item to check new substate
+        item = agent.engine.load_item(item_id)
+        new_substate = item.status.substate
+
+        # If substate didn't change, stop auto‑advancing
+        if new_substate == old_substate:
+            break
+        else:
+            print('successfully ran ' + str(old_substate))
+            user_output += '\n successfully ran step: ' + str(old_substate)
+
+            record = item.step_outputs[old_substate]
+            if record and record.current:
+                user_output += "\n\n" + "current output:\n" + str(record.current)
+
+
+        # Otherwise continue the loop (run next step)
+
+        time.sleep(1)
+
     return user_output
+

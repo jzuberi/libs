@@ -77,6 +77,27 @@ class BaseWorkflowEngine(EngineStorageMixin, ABC):
         """Return a WorkflowItem by ID. Used by agent StepContext commands."""
         return self.load_item(item_id)
 
+    def get_current_step(self, item_id: str):
+        """
+        Return the WorkflowStepSpec for the item's current substate.
+        """
+        item = self.load_item(item_id)
+
+        branch = item.status.branch
+        substate = item.status.substate
+
+        if branch is None or substate is None:
+            return None
+
+        # Validate that substate is part of the branch path
+        path = self.definition.workflow_paths.get(branch)
+        if not path or substate not in path:
+            return None
+
+        # Return the step spec
+        return self.definition.step_specs.get(substate)
+
+
 
     def load_typed_step_output(self, item_id: str, step_name: str):
         item = self.load_item(item_id)
@@ -212,10 +233,12 @@ class BaseWorkflowEngine(EngineStorageMixin, ABC):
             if ds in item.step_outputs:
                 del item.step_outputs[ds]
 
+        """
         # Reset workflow state to the edited step
         item.status.substate = step_name
         item.status.requires_approval = True
         item.status.approved = False
+        """
 
         # -------------------------------------------------------------
         # 9. Update item metadata + save
@@ -560,9 +583,6 @@ class BaseWorkflowEngine(EngineStorageMixin, ABC):
             step_name=step_spec.name,
             parsed_input=parsed_input,   # ← NEW
         )
-
-        # STEP START TRACE...
-
 
         # STEP START TRACE
         self._log_trace(

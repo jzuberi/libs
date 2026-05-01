@@ -9,9 +9,11 @@ from ..parsing.intent_parser import WorkflowIntent
 def parse_intent_with_llm(
     engine,
     contract,
+    handler_map,
     user_message: str,
     workflow_description: str,
     pending_context=None,
+    allowed_handlers=None,
 ) -> WorkflowIntent:
     """
     Stage 1: Pure intent classification.
@@ -23,13 +25,31 @@ def parse_intent_with_llm(
     snapshot = engine.build_context_snapshot(max_chars=2000)
 
     # --------------------------------------------------------------
+    # Filter intents based on allowed_handlers
+    # --------------------------------------------------------------
+    if allowed_handlers:
+        filtered_intents = {}
+        for intent_name, meta in contract["intents"].items():
+            handler_fn = handler_map.get(intent_name)
+            if handler_fn is None:
+                continue
+            handler_name = handler_fn.__name__
+            if handler_name in allowed_handlers:
+                filtered_intents[intent_name] = meta
+    else:
+        filtered_intents = contract["intents"]
+
+    print('filtered_intents')
+    print(filtered_intents)
+
+
+    # --------------------------------------------------------------
     # Build intent list (add clarify_pending)
     # --------------------------------------------------------------
     intent_list = "\n".join(
         f'- "{name}" — {meta.get("description", "")}'
-        for name, meta in contract["intents"].items()
+        for name, meta in filtered_intents.items()
     )
-    intent_list += '\n- "clarify_pending" — The user is providing missing information for a pending intent.'
 
     # --------------------------------------------------------------
     # Pending context block
@@ -103,6 +123,7 @@ def parse_intent_with_llm(
         return WorkflowIntent(
             intent=intent_name,
             reasoning=intent_data.get("reasoning"),
+            user_message=user_message,
         )
 
     except Exception:

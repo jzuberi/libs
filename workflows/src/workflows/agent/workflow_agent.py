@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, Dict, Optional
-
+from pathlib import Path
 from ..engine.base_workflow_engine import BaseWorkflowEngine
 from ..engine.utils.tracing import agent_trace
 from .parsing.intent_parser import WorkflowIntent, parse_intent
@@ -21,6 +21,9 @@ from .dispatch.dispatcher import dispatch_intent
 
 from .context.decorators import updates_context
 from .context.normalization import normalize_step, normalize_item
+
+import json
+import datetime
 
 # workflows/agent/agent.py
 
@@ -44,8 +47,6 @@ class WorkflowAgent(StepContextAgentMixin):
         self.session.context = {
             "items": [],
             "steps": [],
-            "current_item_id": None,
-            "current_step_name": None,
             "_updated_turn": {
                 "items": None,
                 "steps": None,
@@ -53,7 +54,6 @@ class WorkflowAgent(StepContextAgentMixin):
         }
 
         self.workflow_ontology = WorkflowOntologyRegistry()
-
 
         # --------------------------------------------------------------
         # Populate steps namespace using engine definition
@@ -73,12 +73,147 @@ class WorkflowAgent(StepContextAgentMixin):
             "describe_workflow": handle_describe_workflow,
         }
 
+    def save(self):
+        """
+        Save the entire agent session state into the current item's folder.
+        This is future-proof: it serializes the entire session.context dict,
+        converting ontology-backed objects into dicts automatically.
+        """
+        item_id = self.session.last_item_id
+        if not item_id:
+            return
+
+        item_dir = Path(self.engine.base_dir) / item_id
+        item_dir.mkdir(parents=True, exist_ok=True)
+
+        session_path = item_dir / "session.json"
+
+        def serialize_value(v):
+            # Ontology-backed Pydantic model
+            if hasattr(v, "dict"):
+                return serialize_value(v.dict())
+
+            # datetime → ISO 8601 string
+            if isinstance(v, datetime.datetime):
+                return v.isoformat()
+
+            # list → serialize each element
+            if isinstance(v, list):
+                return [serialize_value(x) for x in v]
+
+            # dict → serialize each value
+            if isinstance(v, dict):
+                return {k: serialize_value(x) for k, x in v.items()}
+
+            # primitive
+            return v
+
+
+        data = {
+            "last_item_id": self.session.last_item_id,
+            "last_intent": self.session.last_intent,
+            "turn_index": self.session.turn_index,
+            "context": serialize_value(self.session.context),
+        }
+
+        with open(session_path, "w") as f:
+            json.dump(data, f, indent=2)
+
+    def load(self, item_id=None):
+        """
+        Load a workflow item and restore the agent session state.
+        Automatically rehydrates ontology-backed objects.
+        """
+        # 1. Determine which item to load
+        if item_id is None:
+            item_id = self._find_most_recent_item_id()
+            if not item_id:
+                raise ValueError("No workflow items exist to load.")
+
+        # 2. Load the item from the engine
+        item = self.engine.load_item(item_id)
+
+        # 3. Load session.json if present
+        session_path = Path(self.engine.base_dir) / item_id / "session.json"
+        if not session_path.exists():
+            # No session file → reset session
+            self.session.last_item_id = item_id
+            self.session.context = {}
+            return item
+
+        with open(session_path, "r") as f:
+            data = json.load(f)
+
+        self.session.last_item_id = data.get("last_item_id")
+        self.session.last_intent = data.get("last_intent")
+        self.session.turn_index = data.get("turn_index", 0)
+
+        # 4. Rehydrate ontology-backed objects
+        def rehydrate_value(key, v):
+            # If this key corresponds to an ontology session_key
+            ots = self.workflow_ontology.find_by_session_key(key)
+            if ots:
+                model = ots[0].model
+                if isinstance(v, list):
+                    return [model(**x) for x in v]
+                return model(**v)
+
+            # Otherwise recurse
+            if isinstance(v, list):
+                return [rehydrate_value(key, x) for x in v]
+
+            if isinstance(v, dict):
+                return {k: rehydrate_value(k, x) for k, x in v.items()}
+
+            return v
+
+        restored_context = {}
+        for key, value in data.get("context", {}).items():
+            restored_context[key] = rehydrate_value(key, value)
+
+        self.session.context = restored_context
+
+        return item
+
+    def _find_most_recent_item_id(self):
+        """
+        Return the item_id of the most recently modified workflow item directory.
+        This is future-proof and makes no assumptions about session structure.
+        """
+        base = Path(self.engine.base_dir)
+
+        # No workflow directory yet
+        if not base.exists():
+            return None
+
+        # Collect only directories (each representing an item)
+        item_dirs = [d for d in base.iterdir() if d.is_dir()]
+
+        if not item_dirs:
+            return None
+
+        # Sort by modification time (newest first)
+        item_dirs.sort(key=lambda d: d.stat().st_mtime, reverse=True)
+
+        # Return the newest item directory name
+        return item_dirs[0].name
+
+
     def _get_handler(self, intent_name: str):
         """
         Resolve the handler function for a given intent name.
         Falls back to unknown_intent.
         """
         return self.handler_map.get(intent_name, handle_unknown_intent)
+
+    def _get_base_handler_names(self):
+
+        base_handlers = [
+            fn.__name__
+            for name, fn in self.handler_map.items()
+            if getattr(fn, "_is_base_handler", False)
+        ]
+        return(base_handlers)
 
     def _idle_help(self):
         return (
@@ -191,14 +326,39 @@ class WorkflowAgent(StepContextAgentMixin):
 
             workflow_desc = self._describe_workflow()
 
+            current_step = None
+            allowed_handlers = None
+
+            if self.session.last_item_id:
+                current_step = self.engine.get_current_step(self.session.last_item_id)
+
+                step_handlers = current_step.allowed_handlers or []
+
+                base_handlers = self._get_base_handler_names()
+
+                allowed_handlers = step_handlers + base_handlers
+
+            print('allowed_handlers')
+            print(allowed_handlers)
+
             # Stage 1: intent classification
             intent = parse_intent_with_llm(
                 self.engine,
                 self.contract,
+                self.handler_map,
                 message,
                 workflow_description=workflow_desc,
                 pending_context=self.session.pending_intent,
+                allowed_handlers = allowed_handlers,
             )
+
+            # After Stage 1 classification
+            if intent.intent == "idle":
+                # No parameter extraction for idle
+                if trace:
+                    trace.record_llm_intent(intent.to_dict())
+                return self._idle_help()
+
 
             if intent.intent == "clarify_pending" and self.session.pending_intent is not None:
                 return self._handle_pending_message(message, trace)
@@ -229,7 +389,6 @@ class WorkflowAgent(StepContextAgentMixin):
             )
             intent = intent.with_parameters(params)
 
-
             if trace:
                 trace.record_llm_intent(intent.to_dict())
         else:
@@ -238,13 +397,6 @@ class WorkflowAgent(StepContextAgentMixin):
 
         print('intent')
         print(intent)
-
-        # Rule-based fallback for idle (non-LLM safety net)
-        if intent.intent == "idle":
-            rb_intent = parse_intent(message, self.session, self.contract)
-            if trace:
-                trace.record_rule_intent(rb_intent.to_dict())
-            intent = rb_intent
 
         # --------------------------------------------------------------
         # 2. Special intent: query_current_item
@@ -272,6 +424,62 @@ class WorkflowAgent(StepContextAgentMixin):
 
     def _clear_pending(self):
         self.session.pending_intent = None
+
+
+    def _update_session_context_from_step_output(self, step_name):
+        """
+        After a step completes, load the current item and pull the step output
+        directly from the engine's stored step_outputs, then update the agent
+        session context using ontology metadata.
+
+        This version implements Option A:
+        - Convert dicts into ontology model instances before storing.
+        """
+
+        item_id = self.session.last_item_id
+        if not item_id:
+            return
+
+        # Load the current workflow item
+        item = self.engine.load_item(item_id)
+
+        # Get the step output object
+        step_output_obj = item.step_outputs.get(step_name)
+        if not step_output_obj:
+            return
+
+        # The canonical output is in .current
+        output = step_output_obj.current
+        if not output:
+            return
+
+        # For each ontology type registered
+        for ot in self.workflow_ontology.all_types():
+            session_key = ot.metadata.get("session_key")
+            if not session_key:
+                continue
+
+            # If this step produced objects for this ontology type
+            if session_key in output:
+                objects = output[session_key]
+
+                # Normalize to list
+                if not isinstance(objects, list):
+                    objects = [objects]
+
+                # Convert dicts → Pydantic model instances
+                converted = []
+                for obj in objects:
+                    if isinstance(obj, ot.model):
+                        converted.append(obj)
+                    else:
+                        # obj is a dict → convert to model
+                        converted.append(ot.model(**obj))
+
+                # Store in agent session context
+                self.session.context[session_key] = converted
+
+
 
     def _describe_workflow(self) -> str:
             definition = self.engine.definition

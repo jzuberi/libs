@@ -4,32 +4,22 @@ from ..context.decorators import updates_context
 from ..context.normalization import normalize_item
 from ...engine.utils.tracing import agent_trace
 
+def base_handler(fn):
+    fn._is_base_handler = True
+    return fn
 
 # ----------------------------------------------------------------------
 # Query Current Item
 # ----------------------------------------------------------------------
+
 @agent_trace("handle_query_current_item")
 @updates_context(mapping={}, set_current_item=True)
+@base_handler
 def handle_query_current_item(agent, intent, item_id, resolution_msg):
     if agent.session.last_item_id:
         label = agent.engine.get_item_label(agent.session.last_item_id)
         return {}, f"Your current item is {label}."
     return {}, "You don’t have a current item yet."
-
-
-# ----------------------------------------------------------------------
-# Query Item
-# ----------------------------------------------------------------------
-@agent_trace("handle_query_item")
-@updates_context(mapping={}, set_current_item=True)
-def handle_query_item(agent, intent, item_id, resolution_msg):
-    if not item_id:
-        return {}, resolution_msg
-
-    item = agent.engine.load_item(item_id)
-    summary = agent.engine.summarize_item_structured(item, small=False)
-
-    return {}, f"{resolution_msg}\n\nCurrent status:\n{summary}"
 
 
 # ----------------------------------------------------------------------
@@ -42,6 +32,7 @@ def handle_query_item(agent, intent, item_id, resolution_msg):
     },
     set_current_item=False
 )
+@base_handler
 def handle_list_workflow_items(agent, intent, item_id, resolution_msg):
     items = agent.engine.list_items()
     if not items:
@@ -71,6 +62,7 @@ def handle_list_workflow_items(agent, intent, item_id, resolution_msg):
 # ----------------------------------------------------------------------
 @agent_trace("handle_run_next_step")
 @updates_context(mapping={}, set_current_item=True)
+@base_handler
 def handle_run_next_step(agent, intent, item_id, resolution_msg):
     if not item_id:
         return {}, resolution_msg
@@ -88,55 +80,12 @@ def handle_run_next_step(agent, intent, item_id, resolution_msg):
     )
     return {}, msg
 
-
-# ----------------------------------------------------------------------
-# Approve Substate
-# ----------------------------------------------------------------------
-@agent_trace("handle_approve_substate")
-@updates_context(mapping={}, set_current_item=True)
-def handle_approve_substate(agent, intent, item_id, resolution_msg):
-    if not item_id:
-        return {}, resolution_msg
-
-    agent.engine.approve_substate(item_id)
-    item = agent.engine.load_item(item_id)
-    label = agent.engine.get_item_label(item_id)
-
-    msg = (
-        f"{resolution_msg}\n\n"
-        f"Approved current substate for item {label}.\n"
-        f"State: {item.status.branch}/{item.status.substate}, "
-        f"approved={item.status.approved}"
-    )
-    return {}, msg
-
-
-# ----------------------------------------------------------------------
-# Export Item
-# ----------------------------------------------------------------------
-@agent_trace("handle_export")
-@updates_context(mapping={}, set_current_item=True)
-def handle_export(agent, intent, item_id, resolution_msg):
-    if not item_id:
-        return {}, resolution_msg
-
-    agent.engine.export_item(item_id)
-    item = agent.engine.load_item(item_id)
-    label = agent.engine.get_item_label(item_id)
-
-    msg = (
-        f"{resolution_msg}\n\n"
-        f"Exported item {label}.\n"
-        f"Exported at: {item.exported_at.isoformat() if item.exported_at else 'unknown'}"
-    )
-    return {}, msg
-
-
 # ----------------------------------------------------------------------
 # Unknown Intent
 # ----------------------------------------------------------------------
 @agent_trace("handle_unknown_intent")
 @updates_context(mapping={})
+@base_handler
 def handle_unknown_intent(agent, intent, item_id, resolution_msg):
     return {}, (
         "I couldn’t map that to a workflow action. "
@@ -150,6 +99,7 @@ def handle_unknown_intent(agent, intent, item_id, resolution_msg):
 # ----------------------------------------------------------------------
 @agent_trace("handle_describe_workflow")
 @updates_context(mapping={})
+@base_handler
 def handle_describe_workflow(agent, intent, item_id, resolution_msg):
     return {}, agent._describe_workflow()
 
@@ -159,6 +109,7 @@ def handle_describe_workflow(agent, intent, item_id, resolution_msg):
 # ----------------------------------------------------------------------
 @agent_trace("handle_show_schema")
 @updates_context(mapping={})
+@base_handler
 def handle_show_schema(agent, intent, item_id, resolution_msg):
     step = intent.step_name
     if step not in agent.engine.definition.step_specs:
@@ -180,6 +131,7 @@ def handle_show_schema(agent, intent, item_id, resolution_msg):
 # ----------------------------------------------------------------------
 @agent_trace("handle_explain_schema")
 @updates_context(mapping={})
+@base_handler
 def handle_explain_schema(agent, intent, item_id, resolution_msg):
     step = intent.step_name
     if step not in agent.engine.definition.step_specs:
@@ -202,6 +154,7 @@ def handle_explain_schema(agent, intent, item_id, resolution_msg):
 # ----------------------------------------------------------------------
 @agent_trace("handle_show_step_output")
 @updates_context(mapping={}, set_current_item=True)
+@base_handler
 def handle_show_step_output(agent, intent, item_id, resolution_msg):
     step = intent.step_name
     item = agent.engine.get_item(item_id)
@@ -223,6 +176,7 @@ def handle_show_step_output(agent, intent, item_id, resolution_msg):
 # ----------------------------------------------------------------------
 @agent_trace("handle_list_step_outputs")
 @updates_context(mapping={}, set_current_item=True)
+@base_handler
 def handle_list_step_outputs(agent, intent, item_id, resolution_msg):
     item = agent.engine.get_item(item_id)
     if not item.outputs:

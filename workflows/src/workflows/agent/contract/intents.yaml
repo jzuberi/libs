@@ -1,7 +1,7 @@
 intents:
 
   list_workflow_items:
-    description: "User wants to list recent items in the workflow."
+    description: "User wants to list recent items or runs in the workflow."
     parameters: {}
 
   describe_workflow:

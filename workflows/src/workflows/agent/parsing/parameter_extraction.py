@@ -42,7 +42,6 @@ def jsonable(obj):
     return obj
 
 
-
 def build_relevant_context_for_intent(agent, intent):
     """
     Build relevant context for an intent based on ontology metadata
@@ -86,7 +85,19 @@ def build_relevant_context_for_intent(agent, intent):
         context_key = ot.metadata.get("context_key", type_name.lower())
 
         # 5. Serialize objects using ontology rules
-        out[context_key] = [ot.serialize(obj) for obj in objects]
+        serialized = [ot.serialize(obj) for obj in objects]
+
+        # 6. Filter to ontology-declared fields (if provided)
+        fields = ot.fields or None
+        if fields:
+            filtered = [
+                {k: v for k, v in item.items() if k in fields}
+                for item in serialized
+            ]
+        else:
+            filtered = serialized
+
+        out[context_key] = filtered
 
     return out or None
 
@@ -95,7 +106,7 @@ def build_relevant_context_for_intent(agent, intent):
 def extract_parameters_with_llm(
     engine,
     contract,
-    user_message: str,
+    user_message,
     intent,
     session,
     workflow_description: str,
@@ -114,9 +125,11 @@ def extract_parameters_with_llm(
     schema_block = "\n".join(schema_lines)
 
     # Minimal session context
+    current_item_id = session.last_item_id
+    current_step = engine.get_current_step(current_item_id).name
     minimal_context = {
-        "current_step_name": session.context.get("current_step_name"),
-        "current_item_id": session.context.get("current_item_id"),
+        "current_step_name": current_step,
+        "current_item_id": current_item_id,
     }
     context_block = json.dumps(jsonable(minimal_context), indent=2)
 

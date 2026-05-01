@@ -22,7 +22,6 @@ class ChildWorkflowProxy:
             initial_input=kwargs,
         )
 
-
 def step(
     name: str,
     input_schema=None,
@@ -32,17 +31,17 @@ def step(
     consumes: list[str] | None = None,
     produces: list[str] | None = None,
     agent_hints: str | None = None,
-    mode: str = "function",   # ⭐ NEW
+    mode: str = "function",
+    allowed_handlers: list[str] | None = None,   # ⭐ NEW
 ):
     """
     Public ergonomic decorator for defining workflow steps.
     """
     def decorator(fn):
 
-        # ⭐ NEW: review steps use a no-op function to satisfy validation
+        # Review steps use a no-op function
         if mode == "review":
             def noop(*args, **kwargs):
-                # Engine will skip calling this because kind="review"
                 return {}
             wrapped = noop
         else:
@@ -52,7 +51,7 @@ def step(
 
         step_spec = WorkflowStepSpec(
             name=name,
-            fn=wrapped,                     # ⭐ always callable now
+            fn=wrapped,
             output_schema=output_schema,
             human_name=human_name,
             description=description,
@@ -62,9 +61,9 @@ def step(
             child_workflow_name=None,
             kind=kind,
             input_schema=input_schema,
+            allowed_handlers=allowed_handlers or [],   # ⭐ NEW
         )
 
-        # ⭐ Attach spec to the wrapped function
         wrapped._step_spec = step_spec
         return wrapped
 
@@ -82,24 +81,19 @@ def workflow_step(
     produces: list[str] | None = None,
     agent_hints: str | None = None,
     input_schema=None,
+    allowed_handlers: list[str] | None = None,   # ⭐ NEW
 ):
-    """
-    Public decorator for defining a step that runs a child workflow.
-    """
-
     def decorator(fn):
         step_name = name or fn.__name__
 
         @wraps(fn)
         def wrapped(input):
             ctx = StepContext(input)
-
             child = ChildWorkflowProxy(
                 engine=input.engine,
                 parent_item=input.item,
                 step_spec=wrapped._step_spec,
             )
-
             result = fn(ctx, child)
             return result if result is not None else {}
 
@@ -115,6 +109,7 @@ def workflow_step(
             child_workflow_name=child_workflow_name,
             kind="workflow",
             input_schema=input_schema,
+            allowed_handlers=allowed_handlers or [],   # ⭐ NEW
         )
 
         return wrapped

@@ -26,12 +26,14 @@ class WorkflowIntent:
     intent: str
     parameters: Dict[str, Any] = field(default_factory=dict)
     reasoning: Optional[str] = None
+    user_message: Optional[str] = None
 
     def to_dict(self):
         return {
             "intent": self.intent,
             "parameters": self.parameters,
             "reasoning": self.reasoning,
+            "user_message": self.user_message,
         }
 
     def with_parameters(self, new_params: Dict[str, Any]) -> "WorkflowIntent":
@@ -45,6 +47,7 @@ class WorkflowIntent:
             intent=self.intent,
             parameters=merged,
             reasoning=self.reasoning,
+            user_message=self.user_message,
         )
 
 

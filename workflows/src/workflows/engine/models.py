@@ -190,6 +190,8 @@ class WorkflowStepSpec(BaseModel):
     consumes: Optional[List[str]] = None       # Which steps must run before this?
     produces: Optional[List[str]] = None       # What conceptual outputs does it create?
     agent_hints: Optional[str] = None          # Optional natural-language hints for LLM agents
+    allowed_handlers: list[str] = []       # project specific allowed handlers
+
 
     child_workflow_name: str | None = None
     kind: str = "function"
