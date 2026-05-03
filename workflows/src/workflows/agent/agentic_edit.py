@@ -1,10 +1,17 @@
-from typing import Dict, List, Optional, Any
+from typing import Type, Dict, List, Optional, Any, Callable
 from pydantic import BaseModel
 
 import json
-from typing import Optional
-from pydantic import BaseModel
-from typing import Callable
+
+
+VALIDATION_HANDLERS = {}
+
+def register_validation_handler(name):
+    def decorator(fn):
+        VALIDATION_HANDLERS[name] = fn
+        return fn
+    return decorator
+
 
 class LocalFieldOntology(BaseModel):
     """
@@ -25,6 +32,8 @@ class LocalFieldOntology(BaseModel):
 
     # Natural language aliases for this field (e.g., "summary" for "description").
     aliases: List[str] = []
+
+    validation_handler: Optional[str] = None
 
 
 class LocalOntology(BaseModel):
@@ -519,11 +528,6 @@ def resolve_local_edit(
 ) -> EditResult:
     """
     Main entry point for resolving a user edit request.
-
-    Returns:
-        EditResult(success=True, field, transformation, value)
-        OR
-        EditResult(success=False, user_friendly_message=...)
     """
 
     # -----------------------------
@@ -554,10 +558,6 @@ def resolve_local_edit(
     transformation, error = resolve_transformation(
         field, ontology, obj, user_message, llm
     )
-    
-    print('transformation:')
-    print(transformation)
-    
     if error:
         return EditResult(
             success=False,
@@ -569,9 +569,6 @@ def resolve_local_edit(
     # Step 3: Value extraction
     # -----------------------------
     current_value = obj[field]
-    
-    print('current_value:')
-    print(current_value)
 
     if transformation == "replace":
         new_value, error = extract_value_for_string(current_value, user_message, llm)
@@ -601,9 +598,6 @@ def resolve_local_edit(
             error=error,
             user_friendly_message=error,
         )
-    
-    print('new value:')
-    print(new_value)
 
     # -----------------------------
     # Step 4: Semantic validation
@@ -617,6 +611,33 @@ def resolve_local_edit(
         )
 
     # -----------------------------
+    # Step 4.5: Custom validation handler
+    # -----------------------------
+    ### NEW ###
+    ontology_field = ontology.fields[field]
+    if ontology_field.validation_handler:
+        handler = VALIDATION_HANDLERS.get(ontology_field.validation_handler)
+        if handler is None:
+            return EditResult(
+                success=False,
+                error=f"Unknown validation handler '{ontology_field.validation_handler}'.",
+                user_friendly_message="Internal validation error.",
+            )
+
+        # Build the candidate new object for validation
+        candidate_obj = obj.copy()
+        candidate_obj[field] = new_value
+
+        ok, err = handler(new_value, candidate_obj, obj)
+        if not ok:
+            return EditResult(
+                success=False,
+                error=err,
+                user_friendly_message=err,
+            )
+    ### END NEW ###
+
+    # -----------------------------
     # Step 5: Success
     # -----------------------------
     return EditResult(
@@ -625,3 +646,90 @@ def resolve_local_edit(
         transformation=transformation,
         value=new_value,
     )
+
+
+def build_edits_from_edit_result(metadata: dict, edit_result):
+    """
+    Convert a resolve_local_edit() result into an edits dict
+    suitable for edit_step_output().
+    """
+
+    field = edit_result.field
+    transformation = edit_result.transformation
+    value = edit_result.value
+
+    if field not in metadata:
+        raise ValueError(f"Field '{field}' not found in metadata.")
+
+    current_value = metadata[field]
+
+    # STRING FIELD
+    if transformation == "replace":
+        return {field: value}
+
+    # DICT FIELD: edit a single key's value
+    if transformation == "edit_value":
+        key, new_val = value
+        new_dict = dict(current_value)
+        new_dict[key] = new_val
+        return {field: new_dict}
+
+    # DICT FIELD: remove a key
+    if transformation == "remove_key":
+        key = value
+        new_dict = {k: v for k, v in current_value.items() if k != key}
+        return {field: new_dict}
+
+    # DICT FIELD: rename a key
+    if transformation == "rename_key":
+        old_key, new_key = value
+        new_dict = dict(current_value)
+        new_dict[new_key] = new_dict.pop(old_key)
+        return {field: new_dict}
+
+    # BOOLEAN FIELD
+    if transformation == "toggle":
+        return {field: value}
+
+    raise ValueError(f"Unknown transformation '{transformation}'.")
+
+def ontology_from_model(
+    model_cls: Type[BaseModel],
+    overrides: Dict[str, Dict[str, Any]] | None = None
+) -> LocalOntology:
+    """
+    Build a LocalOntology from a Pydantic model class, with optional overrides.
+
+    - Every field in the Pydantic model becomes a LocalFieldOntology entry.
+    - Defaults: editable=False, description from field metadata, aliases=[field_name]
+    - Overrides can specify: editable, description, qualified_values, aliases,
+      validation_handler.
+    """
+
+    fields = {}
+
+    for name, field in model_cls.model_fields.items():
+        # Default ontology entry
+        fields[name] = LocalFieldOntology(
+            editable=False,
+            description=field.description,
+            qualified_values=None,
+            aliases=[name],
+            validation_handler=None,   # <-- ensure default is present
+        )
+
+    # Apply overrides
+    if overrides:
+        for field_name, override in overrides.items():
+            if field_name not in fields:
+                raise ValueError(
+                    f"Override provided for unknown field '{field_name}' "
+                    f"in model {model_cls.__name__}"
+                )
+
+            # model_copy(update=...) already handles all override keys,
+            # including validation_handler, so no special logic needed.
+            fields[field_name] = fields[field_name].model_copy(update=override)
+
+    return LocalOntology(fields=fields)
+

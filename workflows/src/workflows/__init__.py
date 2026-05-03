@@ -47,7 +47,15 @@ from .agent.workflow_agent import WorkflowAgent
 from .agent.contract.loader import load_agent_contract
 from .agent.context.decorators import updates_context
 
-from .agent.agentic_edit import LocalFieldOntology, LocalOntology, EditResult, resolve_local_edit
+from .agent.agentic_edit import (
+    LocalFieldOntology, 
+    LocalOntology, 
+    EditResult, 
+    resolve_local_edit, 
+    ontology_from_model, 
+    build_edits_from_edit_result, 
+    register_validation_handler,
+    )
 
 # ---------------------------------------------------------
 # Public API surface
@@ -75,6 +83,9 @@ __all__ = [
     "LocalOntology",
     "EditResult",
     "resolve_local_edit",
+    "ontology_from_model",
+    "build_edits_from_edit_result",
+    "register_validation_handler",
 ]
 
 # Optional exports if run_workflow exists
