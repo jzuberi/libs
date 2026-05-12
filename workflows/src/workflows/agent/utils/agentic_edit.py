@@ -68,8 +68,6 @@ class EditResult(BaseModel):
     # User-facing message explaining what happened or what went wrong.
     user_friendly_message: Optional[str] = None
 
-
-
 def validate_structure(
     ontology: LocalOntology,
     obj: dict
@@ -101,7 +99,7 @@ def validate_structure(
 
         # 3. Editable fields must be of supported types
         if meta.editable:
-            if not isinstance(value, (str, dict, bool)):
+            if not isinstance(value, (str, dict, bool, BaseModel)):
                 return (
                     f"The field '{field_name}' has an unsupported type "
                     f"({type(value).__name__}). Only string, dict, and boolean "
@@ -143,13 +141,15 @@ def resolve_field(
     # Build candidate list for the prompt
     field_entries = []
     for field_name, meta in ontology.fields.items():
-        entry = {
-            "field": field_name,
-            "aliases": meta.aliases,
-            "description": meta.description,
-            "editable": meta.editable,
-        }
-        field_entries.append(entry)
+
+        if(meta.editable is True):
+            entry = {
+                "field": field_name,
+                "aliases": meta.aliases,
+                "description": meta.description,
+                "editable": meta.editable,
+            }
+            field_entries.append(entry)
 
     # LLM prompt
     prompt = f"""
@@ -169,7 +169,14 @@ Instructions:
 - Return ONLY the field name or "none".
 """
 
+    print('resolve field prompt')
+    print(prompt)
+
+
     raw = llm(prompt).strip().strip('"').strip("'")
+
+    print('resolve field answer')
+    print(raw)
 
     # Normalize
     raw_lower = raw.lower()
@@ -211,7 +218,11 @@ def resolve_transformation(
         (transformation_name, error_message)
     """
 
+    # If the field is a Pydantic model, skip transformation logic.
     value = obj[field_name]
+    if isinstance(value, BaseModel):
+        return "custom", None
+
 
     # 1. Infer type → allowed transformations
     if isinstance(value, str):
@@ -454,8 +465,14 @@ def validate_semantics(field_name, new_value, transformation, ontology, llm):
     """
 
     field_meta = ontology.fields[field_name]
-    desc = field_meta.description or ""
-    qualified = field_meta.qualified_values or ""
+
+    # -----------------------------------------
+    # 0. Skip semantic validation for structured fields
+    # -----------------------------------------
+    # If the field value is a Pydantic model, semantic validation does not apply.
+    # Custom validation handlers are responsible for validating structured fields.
+    if isinstance(new_value, BaseModel):
+        return None
 
     # -----------------------------------------
     # 1. Transformations that should NOT be validated
@@ -486,6 +503,9 @@ def validate_semantics(field_name, new_value, transformation, ontology, llm):
     # -----------------------------------------
     # 3. LLM semantic validation
     # -----------------------------------------
+
+    desc = field_meta.description or ""
+    qualified = field_meta.qualified_values or ""
 
     prompt = f"""
 You are validating whether a proposed new value fits the meaning of a field.
@@ -518,6 +538,7 @@ Instructions:
         )
 
     return None
+
 
 
 def resolve_local_edit(
@@ -585,6 +606,13 @@ def resolve_local_edit(
     elif transformation == "toggle":
         new_value, error = extract_value_for_bool_toggle(current_value)
 
+    elif transformation == "custom":
+        # For structured fields, the step-specific logic should have already
+        # produced the new_value externally. Here we simply pass through.
+        new_value = obj[field]  # or whatever your step logic sets
+        error = None
+
+
     else:
         return EditResult(
             success=False,
@@ -618,6 +646,7 @@ def resolve_local_edit(
     if ontology_field.validation_handler:
         handler = VALIDATION_HANDLERS.get(ontology_field.validation_handler)
         if handler is None:
+
             return EditResult(
                 success=False,
                 error=f"Unknown validation handler '{ontology_field.validation_handler}'.",
@@ -646,7 +675,6 @@ def resolve_local_edit(
         transformation=transformation,
         value=new_value,
     )
-
 
 def build_edits_from_edit_result(metadata: dict, edit_result):
     """

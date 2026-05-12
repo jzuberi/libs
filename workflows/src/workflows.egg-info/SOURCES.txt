@@ -6,7 +6,7 @@ src/workflows.egg-info/dependency_links.txt
 src/workflows.egg-info/requires.txt
 src/workflows.egg-info/top_level.txt
 src/workflows/agent/__init__.py
-src/workflows/agent/agentic_edit.py
+src/workflows/agent/interactive_trace.py
 src/workflows/agent/session.py
 src/workflows/agent/stepcontext_commands.py
 src/workflows/agent/workflow_agent.py
@@ -26,9 +26,11 @@ src/workflows/agent/parsing/__init__.py
 src/workflows/agent/parsing/general_parser.py
 src/workflows/agent/parsing/intent_parser.py
 src/workflows/agent/parsing/parameter_extraction.py
-src/workflows/agent/prompts/__init__.py
 src/workflows/agent/resolution/__init__.py
 src/workflows/agent/resolution/resolver_core.py
+src/workflows/agent/utils/__init__.py
+src/workflows/agent/utils/agentic_edit.py
+src/workflows/agent/utils/handler_factory.py
 src/workflows/agent/validation/__init__.py
 src/workflows/agent/validation/validator_core.py
 src/workflows/engine/__init__.py

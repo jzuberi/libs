@@ -114,6 +114,10 @@ def extract_parameters_with_llm(
 ):
     meta = contract["intents"].get(intent.intent, {})
     param_specs = meta.get("parameters", {})
+
+    if not param_specs:
+        return {}
+
     extraction_instructions = meta.get("extraction_instructions", "").strip()
 
     # Build schema block
@@ -166,8 +170,6 @@ def extract_parameters_with_llm(
         Extraction instructions for this intent:
         {extraction_instructions}
 
-        Minimal session context:
-        {context_block}
     """)
 
     if relevant_block:

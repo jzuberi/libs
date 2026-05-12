@@ -8,6 +8,9 @@ from .base_workflow_engine import BaseWorkflowEngine
 from .loader import WorkflowLoader
 from .step_context import StepContext
 
+from typing import Callable
+
+
 
 class ChildWorkflowProxy:
     def __init__(self, engine, parent_item, step_spec):
@@ -31,7 +34,7 @@ def step(
     consumes: list[str] | None = None,
     produces: list[str] | None = None,
     agent_hints: str | None = None,
-    mode: str = "function",
+    kind: str = "function",
     allowed_handlers: list[str] | None = None,   # ⭐ NEW
 ):
     """
@@ -39,15 +42,7 @@ def step(
     """
     def decorator(fn):
 
-        # Review steps use a no-op function
-        if mode == "review":
-            def noop(*args, **kwargs):
-                return {}
-            wrapped = noop
-        else:
-            wrapped = workflow_step_internal(name)(fn)
-
-        kind = "review" if mode == "review" else "function"
+        wrapped = workflow_step_internal(name)(fn)
 
         step_spec = WorkflowStepSpec(
             name=name,
@@ -68,6 +63,53 @@ def step(
         return wrapped
 
     return decorator
+
+def custom_data_edit_step(
+    name: str,
+    model,
+    renderer,
+    interpreter,
+    handler,
+    validator=None,
+    human_name: str | None = None,
+    description: str | None = None,
+    consumes: list[str] | None = None,
+    produces: list[str] | None = None,
+    agent_hints: str | None = None,
+    allowed_handlers: list[str] | None = None,
+    context_builder: Callable | None = None,   # ⭐ NEW
+    output_schema=None,
+):
+    """
+    Defines a custom data editing step.
+    The step function itself is usually a no-op that initializes metadata if needed.
+    """
+    def decorator(fn):
+        wrapped = workflow_step_internal(name)(fn)
+
+        wrapped._step_spec = WorkflowStepSpec(
+            name=name,
+            fn=wrapped,
+            kind="custom_data_edit",
+            model=model,
+            renderer=renderer,
+            interpreter=interpreter,
+            handler=handler,
+            validator=validator,
+            human_name=human_name,
+            description=description,
+            consumes=consumes or [],
+            produces=produces or [],
+            agent_hints=agent_hints,
+            allowed_handlers=allowed_handlers or [],
+            context_builder=context_builder,   # ⭐ NEW
+            output_schema=output_schema,
+        )
+
+        return wrapped
+
+    return decorator
+
 
 
 

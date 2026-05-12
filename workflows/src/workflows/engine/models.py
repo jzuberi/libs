@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Tuple, Type
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Literal
 import json
 
 from pydantic import BaseModel, Field, validator
@@ -18,6 +18,70 @@ class TraceLevel(str, Enum):
     DEBUG = "DEBUG"
     ERROR = "ERROR"
     AUDIT = "AUDIT"
+
+
+from typing import List, Union
+
+
+class HandlerMessage(BaseModel):
+    title: Optional[str] = None
+    body: Optional[str] = None
+    bullets: Optional[List[str]] = None
+    footer: Optional[str] = None
+    success: bool = True   # optional styling flag
+
+    def render(self) -> str:
+        parts = []
+
+        # Optional success prefix
+        if self.success:
+            parts.append("✅")
+        else:
+            parts.append("⚠️")
+
+        # Title
+        if self.title:
+            parts.append(f" **{self.title}**")
+        parts.append("")  # newline
+
+        # Body
+        if self.body:
+            parts.append(self.body)
+            parts.append("")
+
+        # Bullets
+        if self.bullets:
+            for b in self.bullets:
+                parts.append(f"- {b}")
+            parts.append("")
+
+        # Footer
+        if self.footer:
+            parts.append(self.footer)
+
+        return "\n".join(parts).strip()
+
+
+MessageLike = Union[str, "HandlerMessage"]
+
+def merge_messages(messages: List[MessageLike]) -> str:
+    """
+    Merge a list of strings and/or HandlerMessage objects into a single
+    rendered string with clean spacing.
+    """
+    rendered_parts = []
+
+    for msg in messages:
+        if msg is None:
+            continue
+
+        if isinstance(msg, HandlerMessage):
+            rendered_parts.append(msg.render())
+        else:
+            rendered_parts.append(str(msg).strip())
+
+    # Join with two newlines for readability
+    return "\n\n".join(part for part in rendered_parts if part)
 
 
 # -------------------------------------------------------------------------
@@ -179,27 +243,40 @@ ValidatorFn = Callable[[WorkflowItem, "BaseWorkflowEngine"], None]
 class WorkflowStepSpec(BaseModel):
     name: str
     fn: WorkflowStepFn
-    context_requirements: List[str] = Field(default_factory=list)
+
+    # NEW: restrict kind to known values
+    kind: Literal["function", "workflow", "review", "custom_data_edit"]
 
     # Optional Pydantic schema for validating step outputs
     output_schema: Optional[type[BaseModel]] = None
 
     # Optional human-readable metadata for agents and UIs
-    description: Optional[str] = None          # What does this step do?
-    human_name: Optional[str] = None           # Friendly name for UI/agent
-    consumes: Optional[List[str]] = None       # Which steps must run before this?
-    produces: Optional[List[str]] = None       # What conceptual outputs does it create?
-    agent_hints: Optional[str] = None          # Optional natural-language hints for LLM agents
-    allowed_handlers: list[str] = []       # project specific allowed handlers
+    description: Optional[str] = None
+    human_name: Optional[str] = None
+    consumes: Optional[List[str]] = None
+    produces: Optional[List[str]] = None
+    agent_hints: Optional[str] = None
+    allowed_handlers: list[str] = []
 
-
+    # Workflow / step type
     child_workflow_name: str | None = None
-    kind: str = "function"
 
+    # Optional input schema
     input_schema: Optional[Type[BaseModel]] = None
+
+    # ⭐ Custom data edit hooks
+    model: Optional[type] = None
+    renderer: Optional[callable] = None
+    interpreter: Optional[callable] = None
+    handler: Optional[callable] = None
+    validator: Optional[callable] = None
+
+    # ⭐ NEW: context builder hook
+    context_builder: Optional[Callable] = None
 
     class Config:
         arbitrary_types_allowed = True
+
 
 
 # -------------------------------------------------------------------------

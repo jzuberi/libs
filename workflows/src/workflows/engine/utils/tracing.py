@@ -5,7 +5,7 @@ import traceback
 from typing import Any, Callable, Dict
 
 from ..models import TraceLevel, WorkflowStepInput, WorkflowStepOutput
-
+from ..models import HandlerMessage
 
 # -------------------------------------------------------------------------
 # Workflow step tracing
@@ -88,7 +88,6 @@ def workflow_step_internal(step_name: str, trace_level: TraceLevel = TraceLevel.
 # -------------------------------------------------------------------------
 # Agent method tracing
 # -------------------------------------------------------------------------
-
 def agent_trace(method_name: str, trace_level: TraceLevel = TraceLevel.INFO):
     """
     Decorator for WorkflowAgent methods.
@@ -140,6 +139,17 @@ def agent_trace(method_name: str, trace_level: TraceLevel = TraceLevel.INFO):
                 )
                 raise
 
+            # ----------------------------------------------------
+            # NEW: HandlerMessage support for pretty trace logs
+            # ----------------------------------------------------
+            if isinstance(result, HandlerMessage):
+                rendered = result.render()
+            elif isinstance(result, tuple) and isinstance(result[1], HandlerMessage):
+                # Many handlers return (raw_map, user_output)
+                rendered = result[1].render()
+            else:
+                rendered = str(result)
+
             # END
             engine._log_trace(
                 trace_type="agent",
@@ -149,7 +159,10 @@ def agent_trace(method_name: str, trace_level: TraceLevel = TraceLevel.INFO):
                 step_name=method_name,
                 actor="agent",
                 artifact=None,
-                details={"event": "agent_end", "result": str(result)[:500]},
+                details={
+                    "event": "agent_end",
+                    "result": rendered[:500],   # still truncate for safety
+                },
                 trace_level=trace_level,
             )
 

@@ -277,6 +277,68 @@ class BaseWorkflowEngine(EngineStorageMixin, ABC):
     # Item lifecycle
     # -------------------------------------------------------------------------
 
+    def _rewind_substate(self, item: WorkflowItem, target_substate: str | None = None):
+        """
+        Move an item's substate backward.
+        If target_substate is None, move back by one step.
+        If target_substate is provided, jump directly to that substate.
+        """
+
+        branch = item.status.branch
+        current = item.status.substate
+
+        # 1. Get the workflow path for this branch
+        path = self.definition.workflow_paths.get(branch)
+        if not path:
+            raise RuntimeError(f"No workflow path defined for branch '{branch}'")
+
+        if current not in path:
+            raise RuntimeError(f"Current substate '{current}' not in workflow path for branch '{branch}'")
+
+        current_idx = path.index(current)
+
+        # ---------------------------------------------------------
+        # MODE 1 — Move back by one step
+        # ---------------------------------------------------------
+        if target_substate is None:
+            if current_idx == 0:
+                # Already at the first substate
+                return False
+
+            prev_sub = path[current_idx - 1]
+            item.status.substate = prev_sub
+
+            # Reset approval flags
+            item.status.approved = False
+            item.status.requires_approval = self.substate_requires_approval(branch, prev_sub)
+
+            self.save_item(item)
+            return True
+
+        # ---------------------------------------------------------
+        # MODE 2 — Jump to a specific substate
+        # ---------------------------------------------------------
+        if target_substate not in path:
+            raise ValueError(f"Target substate '{target_substate}' is not valid for branch '{branch}'")
+
+        target_idx = path.index(target_substate)
+
+        if target_idx > current_idx:
+            raise ValueError(
+                f"Cannot rewind forward: current='{current}', target='{target_substate}'"
+            )
+
+        # Perform the jump
+        item.status.substate = target_substate
+
+        # Reset approval flags
+        item.status.approved = False
+        item.status.requires_approval = self.substate_requires_approval(branch, target_substate)
+
+        self.save_item(item)
+        return True
+
+
     def _advance_substate(self, item: WorkflowItem):
         branch = item.status.branch
         substate = item.status.substate
@@ -342,7 +404,7 @@ class BaseWorkflowEngine(EngineStorageMixin, ABC):
         if not self.base_dir.exists():
             return
 
-        for item_dir in self.base_dir.iterdir():
+        for item_dir in (self.base_dir / 'items').iterdir():
             if not item_dir.is_dir():
                 continue
 
@@ -542,6 +604,91 @@ class BaseWorkflowEngine(EngineStorageMixin, ABC):
             requires_approval=False,
         )
 
+    def _run_custom_data_edit_step(self, item, step_spec, step_input):
+        """
+        Runs a custom data edit step in interactive mode.
+        Returns a dict with status="editing" or status="complete".
+        """
+
+        model = step_spec.model
+        renderer = step_spec.renderer
+        interpreter = step_spec.interpreter
+        handler = step_spec.handler
+        validator = step_spec.validator
+
+        print('running custom step...')
+
+        if item.status.approved:
+            return {"status": "complete"}
+
+
+        # Load or initialize the latent object
+        raw = item.metadata.get(step_spec.name)
+        current_obj = model(**raw) if raw else model()
+
+        # Build domain context
+        context = {
+            "engine": self,
+            "item": item,
+            "raw_context": step_input.context,
+        }
+
+        # Inject messages if this is the dialogue selection step
+        if step_spec.context_builder:
+            context.update(step_spec.context_builder(item, step_input, self))
+
+        print('context builder')
+        print(context)
+
+
+        # If no user message, just render the current view
+        user_message = step_input.context.get("user_message")
+
+        print('user_message')
+        print(user_message)
+
+        if not user_message:
+            view = renderer(current_obj, context)
+            return {
+                "status": "editing",
+                "view": view,
+            }
+
+        # Interpret the user request
+        edit_request = interpreter(user_message, current_obj, context)
+
+        print('edit_request')
+        print(edit_request)
+
+        # Apply the edit
+        new_obj = handler(current_obj, edit_request, context)
+
+        print('new_obj')
+        print(new_obj)
+
+        # Validate
+        if validator is not None:
+            ok, err = validator(new_obj, context)
+            if not ok:
+                view = renderer(current_obj, context)
+                return {
+                    "status": "editing",
+                    "view": view,
+                    "error": err,
+                }
+
+        # Persist the updated object
+        item.metadata[step_spec.name] = new_obj.model_dump()
+        self.save_item(item)
+
+        # Render updated view
+        view = renderer(new_obj, context)
+
+        return {
+            "status": "editing",
+            "view": view,
+        }
+
 
     def run_next_step(
         self,
@@ -619,11 +766,56 @@ class BaseWorkflowEngine(EngineStorageMixin, ABC):
             # IMPORTANT: skip validation + normalization for workflow steps
             validated_artifact = output.artifact
 
+        elif step_spec.kind == "custom_data_edit":
+
+            result = self._run_custom_data_edit_step(item, step_spec, step_input)
+
+            # ⭐ NEW: if the custom edit step is complete, run the step function normally
+            if isinstance(result, dict) and result.get("status") == "complete":
+                # Now run the step function as a normal step
+                raw_output = step_spec.fn(step_input)
+
+                if isinstance(raw_output, WorkflowStepOutput):
+                    output = raw_output
+                else:
+                    output = WorkflowStepOutput(
+                        artifact=raw_output,
+                        next_substate=None,
+                        details={},
+                        summary="",
+                        approved=None,
+                    )
+
+                validated_artifact = self._validate_step_output(step_spec, output)
+                output.artifact = validated_artifact
+
+                # Continue to the normal step output storage logic
+                # (fall through to the rest of run_next_step)
+            else:
+                return result
+
+
         else:
             # ---------------------------------------------------------
             # NORMAL STEP
             # ---------------------------------------------------------
-            raw_output = step_spec.fn(step_input)
+            try:
+                raw_output = step_spec.fn(step_input)
+            except Exception as e:
+                # The decorator already logged the exception to progress.jsonl
+                # Here we convert it into a structured WorkflowStepOutput
+                return WorkflowStepOutput(
+                    artifact=None,
+                    next_substate=None,
+                    details={
+                        "blocked": True,
+                        "error": str(e),
+                        "exception_type": type(e).__name__,
+                    },
+                    summary=f"Step '{step_spec.name}' failed with an exception.",
+                    approved=None,
+                )
+
 
             # Normalize to WorkflowStepOutput
             if isinstance(raw_output, WorkflowStepOutput):
@@ -645,7 +837,7 @@ class BaseWorkflowEngine(EngineStorageMixin, ABC):
         # ---------------------------------------------------------
         # STORE STEP OUTPUT
         # ---------------------------------------------------------
-        item.step_outputs[step_spec.name] = StepOutputRecord(
+        item.step_outputs[old_substate] = StepOutputRecord(
             raw=output.artifact,
             current=output.artifact,
             edits=[],

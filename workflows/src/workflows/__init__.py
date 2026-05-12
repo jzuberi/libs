@@ -13,13 +13,13 @@ Internal engine modules remain private.
 # ---------------------------------------------------------
 # Decorators (workflow authoring)
 # ---------------------------------------------------------
-from .engine.decorators import workflow, step, workflow_step
+from .engine.decorators import workflow, step, workflow_step, custom_data_edit_step
 
 # ---------------------------------------------------------
 # Step execution helpers
 # ---------------------------------------------------------
 from .engine.step_context import StepContext
-from .engine.models import WorkflowStepOutput, WorkflowItem
+from .engine.models import WorkflowStepOutput, WorkflowItem, HandlerMessage
 
 
 # ---------------------------------------------------------
@@ -47,7 +47,7 @@ from .agent.workflow_agent import WorkflowAgent
 from .agent.contract.loader import load_agent_contract
 from .agent.context.decorators import updates_context
 
-from .agent.agentic_edit import (
+from .agent.utils.agentic_edit import (
     LocalFieldOntology, 
     LocalOntology, 
     EditResult, 
@@ -55,6 +55,17 @@ from .agent.agentic_edit import (
     ontology_from_model, 
     build_edits_from_edit_result, 
     register_validation_handler,
+    )
+
+from .agent.utils.handler_factory import (
+    EditConfig, 
+    ChoiceConfig,
+    make_edit_handlers, 
+    make_choice_handlers
+    )
+
+from .agent.interactive_trace import (
+    InteractiveTrace,
     )
 
 # ---------------------------------------------------------
@@ -65,6 +76,7 @@ __all__ = [
     "workflow",
     "step",
     "workflow_step",
+    "custom_data_edit_step",
 
     # Step helpers
     "StepContext",
@@ -77,6 +89,7 @@ __all__ = [
 
     # Agent
     "WorkflowAgent",
+    "HandlerMessage",
     "load_agent_contract",
     "updates_context",
     "LocalFieldOntology",
@@ -86,6 +99,11 @@ __all__ = [
     "ontology_from_model",
     "build_edits_from_edit_result",
     "register_validation_handler",
+    "InteractiveTrace",
+    "EditConfig", 
+    "ChoiceConfig",
+    "make_edit_handlers", 
+    "make_choice_handlers"
 ]
 
 # Optional exports if run_workflow exists

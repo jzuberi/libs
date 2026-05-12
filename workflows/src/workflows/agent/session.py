@@ -13,6 +13,7 @@ class PendingIntent:
 class SessionState:
     last_item_id: Optional[str] = None
     last_intent: Optional[str] = None
+    last_handler_name: Optional[str] = None
     context: dict = field(default_factory=dict)
 
     pending_intent: Optional[PendingIntent] = None   # NEW

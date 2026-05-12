@@ -5,8 +5,18 @@ intents:
     parameters: {}
 
   describe_workflow:
-    description: "User wants a human-readable explanation of the workflow: steps, dependencies, and purpose."
+    description: "User wants a human-readable explanation of the workflow"
     parameters: {}
+    examples:
+      - "describe the current workflow"
+
+
+  create_item:
+    description: "create a new workflow item."
+    parameters: {}
+    examples:
+      - "let's create a new item"
+      - "let's start a new workflow"
 
   # ------------------------------------------------------------------
   # PENDING-INTENT CLARIFICATION INTENTS

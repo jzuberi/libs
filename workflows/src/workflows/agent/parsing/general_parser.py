@@ -6,6 +6,26 @@ from typing import Dict, Any, Optional
 
 from ..parsing.intent_parser import WorkflowIntent
 
+def build_examples_block(filtered_intents):
+    lines = []
+    for name, meta in filtered_intents.items():
+        examples = meta.get("examples")
+        if not examples:
+            continue
+
+        # Header for this intent
+        lines.append(f'Intent "{name}" examples:')
+
+        # List each example
+        for ex in examples:
+            lines.append(f"- {ex}")
+
+        lines.append("")  # spacing
+
+    return "\n".join(lines).strip()
+
+
+
 def parse_intent_with_llm(
     engine,
     contract,
@@ -51,6 +71,9 @@ def parse_intent_with_llm(
         for name, meta in filtered_intents.items()
     )
 
+    examples_block = build_examples_block(filtered_intents)
+
+
     # --------------------------------------------------------------
     # Pending context block
     # --------------------------------------------------------------
@@ -77,28 +100,32 @@ def parse_intent_with_llm(
     # Prompt
     # --------------------------------------------------------------
     prompt = textwrap.dedent(f"""
-        You are a workflow concierge agent. Interpret the user's request into a structured intent.
+    You are a workflow concierge agent. Interpret the user's request into a structured intent.
 
-        User message:
-        {user_message}
+    User message:
+    {user_message}
 
-        {pending_block}
+    {pending_block}
 
-        Current workflow description:
-        {workflow_description}
+    Current workflow description:
+    {workflow_description}
 
-        Valid values for "intent" (with descriptions):
-        {intent_list}
+    Valid values for "intent" (with descriptions):
+    {intent_list}
 
-        Return ONLY a JSON object matching this schema:
+    Examples for disambiguation:
+    {examples_block}
 
-        {{
-          "intent": string,
-          "reasoning": string | null
-        }}
+    Return ONLY a JSON object matching this schema:
 
-        Respond ONLY with valid JSON. Do not include commentary.
-    """)
+    {{
+      "intent": string,
+      "reasoning": string | null
+    }}
+
+    Respond ONLY with valid JSON. Do not include commentary.
+""")
+
 
     print(prompt)
 

@@ -29,6 +29,12 @@ class FileOps:
     def __init__(self, root: Optional[Path | str] = None) -> None:
         self.root = ensure_path(root) if root else None
 
+
+    def is_real_file(self, path_str: str) -> bool:
+        p = Path(path_str)
+        return p.is_file()
+
+
     # ---------- path normalization ----------
 
     def _p(self, path: Path | str) -> Path:

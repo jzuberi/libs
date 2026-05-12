@@ -118,6 +118,7 @@ class StepContext:
     # ---------------------------------------------------------
 
     def finalize(self) -> WorkflowStepOutput:
+        
         if self._artifact is None:
             raise ValueError("Step did not set an artifact via ctx.set_output().")
 
@@ -128,3 +129,22 @@ class StepContext:
             next_substate=self._next_substate,
             requires_approval=self._requires_approval,
         )
+
+    def stay(self) -> WorkflowStepOutput:
+        """
+        Do not advance the workflow. Stay in the current step.
+        """
+        self._next_substate = self.item.status.substate
+
+        if self._artifact is None:
+            raise ValueError("ctx.stay() requires ctx.set_output() first.")
+
+        return WorkflowStepOutput(
+            artifact=self._artifact,
+            details=self._details,
+            summary=self._summary,
+            next_substate=self._next_substate,
+            requires_approval=self._requires_approval,
+        )
+
+

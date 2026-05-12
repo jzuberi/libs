@@ -8,18 +8,8 @@ def base_handler(fn):
     fn._is_base_handler = True
     return fn
 
-# ----------------------------------------------------------------------
-# Query Current Item
-# ----------------------------------------------------------------------
 
-@agent_trace("handle_query_current_item")
-@updates_context(mapping={}, set_current_item=True)
-@base_handler
-def handle_query_current_item(agent, intent, item_id, resolution_msg):
-    if agent.session.last_item_id:
-        label = agent.engine.get_item_label(agent.session.last_item_id)
-        return {}, f"Your current item is {label}."
-    return {}, "You don’t have a current item yet."
+
 
 
 # ----------------------------------------------------------------------
@@ -56,30 +46,6 @@ def handle_list_workflow_items(agent, intent, item_id, resolution_msg):
 
     return {"items": items}, "\n".join(lines)
 
-
-# ----------------------------------------------------------------------
-# Run Next Step
-# ----------------------------------------------------------------------
-@agent_trace("handle_run_next_step")
-@updates_context(mapping={}, set_current_item=True)
-@base_handler
-def handle_run_next_step(agent, intent, item_id, resolution_msg):
-    if not item_id:
-        return {}, resolution_msg
-
-    output = agent.engine.run_next_step(item_id)
-    item = agent.engine.load_item(item_id)
-    label = agent.engine.get_item_label(item_id)
-
-    msg = (
-        f"{resolution_msg}\n\n"
-        f"Ran step on item {label}.\n"
-        f"Summary: {output.summary}\n"
-        f"New state: {item.status.branch}/{item.status.substate}, "
-        f"approved={item.status.approved}"
-    )
-    return {}, msg
-
 # ----------------------------------------------------------------------
 # Unknown Intent
 # ----------------------------------------------------------------------
@@ -104,86 +70,55 @@ def handle_describe_workflow(agent, intent, item_id, resolution_msg):
     return {}, agent._describe_workflow()
 
 
-# ----------------------------------------------------------------------
-# Show Schema
-# ----------------------------------------------------------------------
-@agent_trace("handle_show_schema")
-@updates_context(mapping={})
+
+@agent_trace("handle_create_item")
+@updates_context(
+    mapping={},
+    set_current_item=True
+)
 @base_handler
-def handle_show_schema(agent, intent, item_id, resolution_msg):
-    step = intent.step_name
-    if step not in agent.engine.definition.step_specs:
-        return {}, f"Unknown step: {step}"
+def handle_create_item(agent, intent, item_id, resolution_msg):
+    """
+    Create a brand new workflow item and reset the agent trace + context.
+    """
+    
+    # 1. Create the item via the engine
+    result = agent.engine.create_item(
+         description="content-production",
+         type="content_production",
+         initial_substate="load_ideas",
+    )
+    
+    new_item_id = result.id
 
-    spec = agent.engine.definition.step_specs[step]
-    schema = spec.output_schema.schema()
+    # 2. Reset interactive trace
+    agent.session.turns = []
+    agent.session.step_events = []
+    agent.session.last_completed_step = None
+    agent.session.last_handler_name = None
 
-    lines = [f"Schema for {spec.human_name or step}:"]
-    for name, field in schema["properties"].items():
-        ftype = field.get("type", "unknown")
-        lines.append(f"- {name}: {ftype}")
+    # 3. Reset item-scoped context
+    agent.session.context["items"] = []
 
-    return {}, "\n".join(lines)
+    # Reset updated_turn markers
+    agent.session.context["_updated_turn"] = {
+        "items": agent.session.turn_index,
+        "steps": agent.session.turn_index,
+        "current_item_id": agent.session.turn_index,
+    }
 
+    # 4. Update the single source of truth
+    agent.session.last_item_id = new_item_id
 
-# ----------------------------------------------------------------------
-# Explain Schema
-# ----------------------------------------------------------------------
-@agent_trace("handle_explain_schema")
-@updates_context(mapping={})
-@base_handler
-def handle_explain_schema(agent, intent, item_id, resolution_msg):
-    step = intent.step_name
-    if step not in agent.engine.definition.step_specs:
-        return {}, f"Unknown step: {step}"
+    # 5. Optional: keep this convenience field in sync
+    agent.session.context["current_item_id"] = new_item_id
 
-    spec = agent.engine.definition.step_specs[step]
-    schema = spec.output_schema.schema()
+    # 6. Persist
+    agent.save()
 
-    lines = [f"Explanation of schema for {spec.human_name or step}:"]
-    for name, field in schema["properties"].items():
-        ftype = field.get("type", "unknown")
-        desc = field.get("description", "No description provided.")
-        lines.append(f"- Field '{name}' is a(n) {ftype}. {desc}")
+    # 7. Return handler output
+    return (
+        {"current_item_id": new_item_id},
+        f"Created a new workflow item: {new_item_id}"
+    )
 
-    return {}, "\n".join(lines)
-
-
-# ----------------------------------------------------------------------
-# Show Step Output
-# ----------------------------------------------------------------------
-@agent_trace("handle_show_step_output")
-@updates_context(mapping={}, set_current_item=True)
-@base_handler
-def handle_show_step_output(agent, intent, item_id, resolution_msg):
-    step = intent.step_name
-    item = agent.engine.get_item(item_id)
-
-    if step not in item.outputs:
-        return {}, f"No output found for step {step}"
-
-    output = item.outputs[step]
-
-    lines = [f"Output for {step}:"]
-    for k, v in output.items():
-        lines.append(f"- {k}: {v}")
-
-    return {}, "\n".join(lines)
-
-
-# ----------------------------------------------------------------------
-# List Step Outputs
-# ----------------------------------------------------------------------
-@agent_trace("handle_list_step_outputs")
-@updates_context(mapping={}, set_current_item=True)
-@base_handler
-def handle_list_step_outputs(agent, intent, item_id, resolution_msg):
-    item = agent.engine.get_item(item_id)
-    if not item.outputs:
-        return {}, "No step outputs yet."
-
-    lines = ["Step outputs:"]
-    for step, output in item.outputs.items():
-        lines.append(f"- {step}: {output}")
-
-    return {}, "\n".join(lines)

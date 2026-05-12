@@ -31,6 +31,7 @@ from .handlers.handlers import (
     handle_list_workflow_items,
     handle_describe_workflow,
     handle_unknown_intent,
+    handle_create_item,
 )
 
 
@@ -69,8 +70,11 @@ class WorkflowAgent(StepContextAgentMixin):
         # Instance-level handler map (safe for overrides)
         self.handler_map = {
             "list_workflow_items": handle_list_workflow_items,
-            "unknown_intent": handle_unknown_intent,
             "describe_workflow": handle_describe_workflow,
+            "create_item": handle_create_item,
+            
+            "unknown_intent": handle_unknown_intent,
+            
         }
 
     def save(self):
@@ -82,8 +86,10 @@ class WorkflowAgent(StepContextAgentMixin):
         item_id = self.session.last_item_id
         if not item_id:
             return
+        
+        
 
-        item_dir = Path(self.engine.base_dir) / item_id
+        item_dir = self.engine._item_dir(item_id)
         item_dir.mkdir(parents=True, exist_ok=True)
 
         session_path = item_dir / "session.json"
@@ -108,7 +114,6 @@ class WorkflowAgent(StepContextAgentMixin):
             # primitive
             return v
 
-
         data = {
             "last_item_id": self.session.last_item_id,
             "last_intent": self.session.last_intent,
@@ -119,11 +124,73 @@ class WorkflowAgent(StepContextAgentMixin):
         with open(session_path, "w") as f:
             json.dump(data, f, indent=2)
 
+    def _rewind_substate(self, target_substate, item_id=None):
+        """
+        Rewind the workflow to `target_substate` and delete all step outputs
+        for that substate and all substates that come after it.
+        """
+
+        # ---------------------------------------------------------
+        # Load item
+        # ---------------------------------------------------------
+        if item_id is None:
+            item_id = self.session.last_item_id
+
+        item = self.engine.load_item(item_id)
+
+        branch = item.status.branch
+        current = item.status.substate
+
+        # ---------------------------------------------------------
+        # Validate workflow path
+        # ---------------------------------------------------------
+        path = self.engine.definition.workflow_paths.get(branch)
+        if not path:
+            raise RuntimeError(f"No workflow path defined for branch '{branch}'")
+
+        if target_substate not in path:
+            raise ValueError(f"Target substate '{target_substate}' is not valid for branch '{branch}'")
+
+        current_idx = path.index(current)
+        target_idx = path.index(target_substate)
+
+        # ---------------------------------------------------------
+        # Only rewind backward
+        # ---------------------------------------------------------
+        if target_idx >= current_idx:
+            # Nothing to do (or invalid forward rewind)
+            return False
+
+        # ---------------------------------------------------------
+        # ⭐ Delete step outputs for target and all future steps
+        # ---------------------------------------------------------
+        for sub in path[target_idx:]:
+            if sub in item.step_outputs:
+                del item.step_outputs[sub]
+
+        # ---------------------------------------------------------
+        # Perform the rewind
+        # ---------------------------------------------------------
+        item.status.substate = target_substate
+
+        # Reset approval flags
+        item.status.approved = False
+        item.status.requires_approval = self.engine.substate_requires_approval(
+            branch,
+            target_substate
+        )
+
+        # Persist
+        self.engine.save_item(item)
+
+        return True
+
     def load(self, item_id=None):
         """
         Load a workflow item and restore the agent session state.
         Automatically rehydrates ontology-backed objects.
         """
+
         # 1. Determine which item to load
         if item_id is None:
             item_id = self._find_most_recent_item_id()
@@ -136,7 +203,6 @@ class WorkflowAgent(StepContextAgentMixin):
         # 3. Load session.json if present
         session_path = Path(self.engine.base_dir) / item_id / "session.json"
         if not session_path.exists():
-            # No session file → reset session
             self.session.last_item_id = item_id
             self.session.context = {}
             return item
@@ -148,23 +214,37 @@ class WorkflowAgent(StepContextAgentMixin):
         self.session.last_intent = data.get("last_intent")
         self.session.turn_index = data.get("turn_index", 0)
 
+        # ---------------------------------------------------------
         # 4. Rehydrate ontology-backed objects
+        #    (with protection for internal namespaces)
+        # ---------------------------------------------------------
+
+        NON_MODEL_CONTEXT_KEYS = {"_updated_turn"}
+
         def rehydrate_value(key, v):
-            # If this key corresponds to an ontology session_key
+            # 0. Skip internal namespaces entirely
+            if key in NON_MODEL_CONTEXT_KEYS:
+                return v
+
+            # 1. If this key corresponds to an ontology session_key
             ots = self.workflow_ontology.find_by_session_key(key)
             if ots:
                 model = ots[0].model
                 if isinstance(v, list):
                     return [model(**x) for x in v]
-                return model(**v)
+                if isinstance(v, dict):
+                    return model(**v)
+                return v  # primitive fallback
 
-            # Otherwise recurse
+            # 2. Recurse into lists
             if isinstance(v, list):
                 return [rehydrate_value(key, x) for x in v]
 
+            # 3. Recurse into dicts
             if isinstance(v, dict):
                 return {k: rehydrate_value(k, x) for k, x in v.items()}
 
+            # 4. Primitive
             return v
 
         restored_context = {}
@@ -178,26 +258,25 @@ class WorkflowAgent(StepContextAgentMixin):
     def _find_most_recent_item_id(self):
         """
         Return the item_id of the most recently modified workflow item directory.
-        This is future-proof and makes no assumptions about session structure.
+        Filters out system folders like __pycache__ and hidden directories.
         """
         base = Path(self.engine.base_dir)
 
-        # No workflow directory yet
         if not base.exists():
             return None
 
-        # Collect only directories (each representing an item)
-        item_dirs = [d for d in base.iterdir() if d.is_dir()]
+        item_dirs = [
+            d for d in base.iterdir()
+            if d.is_dir()
+            and not d.name.startswith(".")          # hidden dirs
+            and d.name != "__pycache__"             # Python cache
+        ]
 
         if not item_dirs:
             return None
 
-        # Sort by modification time (newest first)
         item_dirs.sort(key=lambda d: d.stat().st_mtime, reverse=True)
-
-        # Return the newest item directory name
         return item_dirs[0].name
-
 
     def _get_handler(self, intent_name: str):
         """

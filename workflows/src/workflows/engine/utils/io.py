@@ -31,7 +31,7 @@ class EngineStorageMixin:
 
         # ROOT ITEM (no parent)
         if not item.parent_id:
-            d = self.base_dir / item_id
+            d = self.base_dir / 'items' / item_id
             d.mkdir(parents=True, exist_ok=True)
             return d
 
