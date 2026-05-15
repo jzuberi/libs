@@ -10,29 +10,41 @@ intents:
     examples:
       - "describe the current workflow"
 
+  load_recent:
+    description: "User wants to load the most recent item"
+    parameters: {}
+    examples:
+      - "load the recent item"
+
+  show_current_item:
+    description: "User wants information on the current item"
+    parameters: {}
+    examples:
+      - "get item info"
+      - "item status"
+
+  rewind_substate:
+    description: "User wants to rewind item substate"
+    parameters:
+      target_substate:
+        type: string
+        required: true
+    examples:
+      - "let's rewind the item substate"
+      - "move item state backward"
+
 
   create_item:
     description: "create a new workflow item."
     parameters: {}
     examples:
       - "let's create a new item"
-      - "let's start a new workflow"
+      - "let's start it"
+      - "run it"
 
   # ------------------------------------------------------------------
   # PENDING-INTENT CLARIFICATION INTENTS
   # ------------------------------------------------------------------
-
-  confirm_pending:
-    description: "User is confirming the previously proposed action or item in a pending clarification."
-    parameters: {}
-
-  reject_pending:
-    description: "User is rejecting the previously proposed action or item and wants to choose another."
-    parameters: {}
-
-  cancel_pending:
-    description: "User wants to cancel the pending action and return to normal conversation."
-    parameters: {}
 
   idle:
     description: "Unclear or no actionable intent; agent should ask for clarification."

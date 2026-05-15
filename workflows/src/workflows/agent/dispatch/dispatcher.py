@@ -92,7 +92,7 @@ def dispatch_intent(agent, intent, trace=None):
     agent.session.last_handler_name = handler_name
 
     # Special case: create_item updates item_id
-    if handler_name == 'handle_create_item':
+    if handler_name in ['handle_create_item','handle_load_recent']:
         item_id = raw_objects['current_item_id']
         agent.session.last_item_id = item_id
         agent.engine._load_existing_items()

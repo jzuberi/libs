@@ -301,20 +301,27 @@ def extract_value_for_string(current_value: str, user_message: str, llm):
     """
 
     prompt = f"""
-The user wants to update a string field.
+    The user wants to update a string field.
 
-Current value:
-{current_value}
+    Current value:
+    {current_value}
 
-User request:
-"{user_message}"
+    User request:
+    "{user_message}"
 
-Your task:
-- If the user clearly provides a new value (e.g., inside quotes or directly stated),
-  extract that new value.
-- Otherwise, rewrite the current value according to the user's request.
-- Return ONLY the new value, with no explanation or commentary.
-"""
+    Your task:
+    - If the user clearly provides a new value (e.g., inside quotes or directly stated),
+    extract that new value.
+    - Otherwise, rewrite the current value according to the user's request.
+    - Return ONLY the new value, with no explanation or commentary.
+
+    Examples:
+    Update the 'name' field to this: 'Run123/Big Fun'. new value: 'Run123/Big Fun'
+    Let's adjust the filepath to /User/chat.jamesz/234902/projects/chicken. new value: '/User/chat.jamesz/234902/projects/chicken'
+    Make the description shorter. new value: [process the current value to make it shorter]
+
+    - Return ONLY the new value, with no explanation or commentary.
+    """
 
     new_val = llm(prompt).strip()
     if not new_val:

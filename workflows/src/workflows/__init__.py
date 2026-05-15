@@ -64,8 +64,12 @@ from .agent.utils.handler_factory import (
     make_choice_handlers
     )
 
-from .agent.interactive_trace import (
-    InteractiveTrace,
+from .bridge.actor_record import (
+    ActorRecord,
+    )
+
+from .bridge.background_agent.base import (
+    BaseBackgroundAgent,
     )
 
 # ---------------------------------------------------------
@@ -99,11 +103,14 @@ __all__ = [
     "ontology_from_model",
     "build_edits_from_edit_result",
     "register_validation_handler",
-    "InteractiveTrace",
     "EditConfig", 
     "ChoiceConfig",
     "make_edit_handlers", 
-    "make_choice_handlers"
+    "make_choice_handlers",
+
+    # Bridge
+    "ActorRecord",
+    "BaseBackgroundAgent",
 ]
 
 # Optional exports if run_workflow exists

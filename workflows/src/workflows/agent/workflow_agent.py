@@ -32,6 +32,9 @@ from .handlers.handlers import (
     handle_describe_workflow,
     handle_unknown_intent,
     handle_create_item,
+    handle_load_recent,
+    handle_show_current_item,
+    handle_rewind_substate
 )
 
 
@@ -72,9 +75,11 @@ class WorkflowAgent(StepContextAgentMixin):
             "list_workflow_items": handle_list_workflow_items,
             "describe_workflow": handle_describe_workflow,
             "create_item": handle_create_item,
-            
+            "load_recent":handle_load_recent,
+            "show_current_item":handle_show_current_item,
+            "rewind_substate":handle_rewind_substate,
+
             "unknown_intent": handle_unknown_intent,
-            
         }
 
     def save(self):
@@ -260,7 +265,7 @@ class WorkflowAgent(StepContextAgentMixin):
         Return the item_id of the most recently modified workflow item directory.
         Filters out system folders like __pycache__ and hidden directories.
         """
-        base = Path(self.engine.base_dir)
+        base = Path(self.engine.base_dir / 'items')
 
         if not base.exists():
             return None
@@ -297,8 +302,7 @@ class WorkflowAgent(StepContextAgentMixin):
     def _idle_help(self):
         return (
             "I’m not sure what you want to do. "
-            "You can ask me to list items, run the next step, approve, export, "
-            "show step outputs, or show schemas."
+            "You can ask me to describe the current workflow or create a new workflow item "
         )
 
     # ------------------------------------------------------------------
@@ -557,8 +561,6 @@ class WorkflowAgent(StepContextAgentMixin):
 
                 # Store in agent session context
                 self.session.context[session_key] = converted
-
-
 
     def _describe_workflow(self) -> str:
             definition = self.engine.definition
