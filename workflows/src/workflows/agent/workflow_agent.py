@@ -410,7 +410,7 @@ class WorkflowAgent(StepContextAgentMixin):
             workflow_desc = self._describe_workflow()
 
             current_step = None
-            allowed_handlers = None
+            allowed_handlers = self._get_base_handler_names()
 
             if self.session.last_item_id:
                 current_step = self.engine.get_current_step(self.session.last_item_id)
@@ -423,6 +423,7 @@ class WorkflowAgent(StepContextAgentMixin):
 
             print('allowed_handlers')
             print(allowed_handlers)
+
 
             # Stage 1: intent classification
             intent = parse_intent_with_llm(
@@ -579,13 +580,9 @@ class WorkflowAgent(StepContextAgentMixin):
                 produces = spec.produces or []
                 hints = spec.agent_hints or ""
 
-                lines.append(f" {human} ('{step_name}')")
+                lines.append(f" {human} ")
                 lines.append(f"- What it does: {desc}")
 
-                if consumes:
-                    lines.append(f"- Depends on: {', '.join(consumes)}")
-                if produces:
-                    lines.append(f"- Produces: {', '.join(produces)}")
                 if hints:
                     lines.append(f"- Agent hints: {hints}")
 

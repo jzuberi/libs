@@ -89,7 +89,7 @@ class BaseBackgroundAgent(ABC):
             except Exception as e:
                 print(f"[background] ❌ Error: {e}")
 
-            time.sleep(30)
+            time.sleep(5)
 
     # ------------------------------------------------------------
     # One cycle

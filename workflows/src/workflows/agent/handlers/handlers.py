@@ -26,7 +26,7 @@ def handle_list_workflow_items(agent, intent, item_id, resolution_msg):
         return {"items": []}, "There are no items in this workflow yet."
 
     items = sorted(items, key=lambda it: it.created_at, reverse=True)
-    limit = getattr(agent, "DEFAULT_RECENT_LIMIT", 5)
+    limit = getattr(agent, "DEFAULT_RECENT_LIMIT", 10)
     items = items[:limit]
 
     agent.session.last_listed_items = [it.id for it in items]
@@ -35,6 +35,7 @@ def handle_list_workflow_items(agent, intent, item_id, resolution_msg):
     for idx, item in enumerate(items, start=1):
         label = item.label or agent.engine.get_item_label(item.id)
         status_str = (
+            f"{item.id} | "
             f"{item.status.branch}/{item.status.substate} | "
             f"approved={item.status.approved}"
         )
@@ -203,8 +204,13 @@ def handle_load_recent(agent, intent, item_id, resolution_msg):
     """
     Create a brand new workflow item and reset the agent trace + context.
     """
+    item_id = intent.parameters.get("item_id", "")
+    try:
+        item = agent.load(item_id)
+    except Exception as e:
+        print(e)
+        item = agent.load()
 
-    item = agent.load()
     new_item_id = item.id
 
     # 2. Reset interactive trace

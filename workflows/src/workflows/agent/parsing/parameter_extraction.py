@@ -129,13 +129,17 @@ def extract_parameters_with_llm(
     schema_block = "\n".join(schema_lines)
 
     # Minimal session context
+
+    context_block = ""
     current_item_id = session.last_item_id
-    current_step = engine.get_current_step(current_item_id).name
-    minimal_context = {
-        "current_step_name": current_step,
-        "current_item_id": current_item_id,
-    }
-    context_block = json.dumps(jsonable(minimal_context), indent=2)
+
+    if(current_item_id is not None):
+        current_step = engine.get_current_step(current_item_id).name
+        minimal_context = {
+            "current_step_name": current_step,
+            "current_item_id": current_item_id,
+        }
+        context_block = json.dumps(jsonable(minimal_context), indent=2)
 
     # ------------------------------------------------------------
     # Relevant context block (ontology-driven)

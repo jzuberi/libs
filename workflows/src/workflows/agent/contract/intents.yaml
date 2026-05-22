@@ -12,9 +12,13 @@ intents:
 
   load_recent:
     description: "User wants to load the most recent item"
-    parameters: {}
+    parameters:
+      item_id:
+        type: string
+        required: False
     examples:
       - "load the recent item"
+      - "load this item -> eca74791-e0fb-475e-959d-94d6cee80896"
 
   show_current_item:
     description: "User wants information on the current item"

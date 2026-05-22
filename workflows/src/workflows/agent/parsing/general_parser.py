@@ -74,27 +74,6 @@ def parse_intent_with_llm(
     examples_block = build_examples_block(filtered_intents)
 
 
-    # --------------------------------------------------------------
-    # Pending context block
-    # --------------------------------------------------------------
-    if pending_context is not None:
-        pending_block = textwrap.dedent(f"""
-            There is a pending intent that requires clarification.
-
-            Pending intent:
-            {pending_context.intent}
-
-            Missing fields:
-            {pending_context.missing}
-
-            If the user is providing information to fill these missing fields,
-            classify the message as "clarify_pending".
-
-            If the user is issuing a new command unrelated to the pending intent,
-            classify normally.
-        """)
-    else:
-        pending_block = "There is no pending intent.\n"
 
     # --------------------------------------------------------------
     # Prompt
@@ -105,7 +84,6 @@ def parse_intent_with_llm(
     User message:
     {user_message}
 
-    {pending_block}
 
     Current workflow description:
     {workflow_description}
