@@ -1,0 +1,20 @@
+[project]
+name = "ragstore"
+version = "0.0.1"
+description = "A backend-agnostic RAG storage library"
+authors = [{ name = "jzubes" }]
+readme = "README.md"
+requires-python = ">=3.10"
+
+dependencies = [
+    "qdrant-client>=1.8",
+    "chromadb>=0.5",
+    "pydantic>=2.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+package = true

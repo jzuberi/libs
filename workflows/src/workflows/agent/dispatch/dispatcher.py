@@ -7,10 +7,36 @@ from ...engine.models import HandlerMessage, merge_messages
 
 import time
 
+import json
+
 def render_user_output(user_output):
     if isinstance(user_output, HandlerMessage):
         return user_output.render()
     return str(user_output)
+
+
+def pretty_value(v, max_len=2000):
+    """
+    Convert any Python value into a readable, compact string.
+    - dicts/lists → pretty JSON
+    - long strings → truncated
+    - everything else → str()
+    """
+    if isinstance(v, (dict, list)):
+        text = json.dumps(v, indent=2)
+    else:
+        text = str(v)
+
+    # Truncate huge values
+    if len(text) > max_len:
+        text = text[:max_len] + "…"
+
+    # Indent multi-line values so bullets look clean
+    if "\n" in text:
+        text = "\n    " + text.replace("\n", "\n    ")
+
+    return text
+
 
 def dispatch_intent(agent, intent, trace=None):
 
@@ -168,7 +194,9 @@ def dispatch_intent(agent, intent, trace=None):
 
         if step_record and step_record.current:
             for k, v in step_record.current.items():
-                bullets.append(f"**{k}**: {v}")
+                pv = pretty_value(v)
+                bullets.append(f"**{k}**:\n{pv}")
+
 
         auto_msg = HandlerMessage(
             title=f"Step Completed: {old_substate}",

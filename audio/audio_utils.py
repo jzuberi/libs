@@ -466,17 +466,19 @@ def uncommon_tokens(context, freq_dict, rarity_threshold=2, min_length=4):
     - Acronyms/hyphenated only if also rare
     - Return tokens sorted by ascending frequency (rarest first)
     """
-    tokens = clean_text_preserve_phrases(context).split()
+    tokens = set(clean_text_preserve_phrases(context).split())
     rare = []
-    for t in tokens:
+
+    for t in sorted((tokens)):
         freq = freq_dict.get(t, 0)
+
         if freq <= rarity_threshold and len(t) >= min_length:
             rare.append((t, freq))
-        elif ("-" in t or t.isupper()) and freq <= rarity_threshold and len(t) >= min_length:
+        elif ("-" in t or t.isupper()) and freq <= rarity_threshold and len(t) == min_length:
             rare.append((t, freq))
 
     # Sort by frequency (rarest first), then by length (longer anchors first)
-    rare.sort(key=lambda x: (x[1], -len(x[0])))
+    rare.sort(key=lambda x: (x[1], - len(x[0])))
     return [t for t, _ in rare]
 
 def best_guess_time_for_context(
@@ -486,7 +488,7 @@ def best_guess_time_for_context(
     start_col="start",
     end_col="end",
     threshold=0.6,
-    weak_threshold=0.4,
+    weak_threshold=0.3,
     allow_gap=1,
     min_words_start=12,
     min_words_floor=6,
@@ -561,7 +563,7 @@ def best_guess_time_for_context(
             # Weighted scoring: similarity + boosted rare anchors
             acronym_boost = sum(1 for w in rare_overlap if w.isupper())
             hyphen_boost = sum(1 for w in rare_overlap if "-" in w)
-            score = 0.7 * ratio + 0.3 * (len(rare_overlap) + 2*acronym_boost + 2*hyphen_boost)
+            score = 0.8 * ratio + 0.3 * (len(rare_overlap) + 2*acronym_boost + 2*hyphen_boost)
             rare_candidates.append((
                 idx, score, row[start_col], row[end_col], rare_overlap, substantive_overlap
             ))

@@ -145,3 +145,84 @@ def atomic_write(path: Path, data: str, encoding: str = "utf-8") -> None:
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(data, encoding=encoding)
     tmp.replace(path)
+
+
+def list_files(
+    directory: Union[str, Path],
+    remove_hidden: bool = True,
+    extensions: Iterable[str] | None = None,
+) -> list[Path]:
+    """
+    List files in a directory with optional filtering.
+
+    Args:
+        directory: Path to the directory.
+        remove_hidden: If True, exclude hidden files (Unix-style).
+        extensions: Optional iterable of extensions to include (e.g. [".json", ".yaml"]).
+
+    Returns:
+        A list of Path objects.
+    """
+    dir_path = ensure_path(directory)
+
+    if not dir_path.exists() or not dir_path.is_dir():
+        raise NotADirectoryError(f"Not a directory: {dir_path}")
+
+    files = []
+
+    for p in dir_path.iterdir():
+        if not p.is_file():
+            continue
+
+        # Remove hidden files
+        if remove_hidden and is_hidden(p):
+            continue
+
+        # Filter by extension
+        if extensions is not None:
+            if p.suffix.lower() not in {ext.lower() for ext in extensions}:
+                continue
+
+        files.append(p)
+
+    return sorted(files)
+
+def list_dirs(
+    directory: Union[str, Path],
+    remove_hidden: bool = True,
+    name_contains: str | None = None,
+) -> list[Path]:
+    """
+    List subdirectories in a directory with optional filtering.
+
+    Args:
+        directory: Path to the directory.
+        remove_hidden: If True, exclude hidden directories (Unix-style).
+        name_contains: Optional substring filter for directory names.
+
+    Returns:
+        A sorted list of Path objects representing subdirectories.
+    """
+    dir_path = ensure_path(directory)
+
+    if not dir_path.exists() or not dir_path.is_dir():
+        raise NotADirectoryError(f"Not a directory: {dir_path}")
+
+    dirs = []
+
+    for p in dir_path.iterdir():
+        if not p.is_dir():
+            continue
+
+        # Remove hidden dirs
+        if remove_hidden and is_hidden(p):
+            continue
+
+        # Optional substring filter
+        if name_contains is not None:
+            if name_contains.lower() not in p.name.lower():
+                continue
+
+        dirs.append(p)
+
+    return sorted(dirs)

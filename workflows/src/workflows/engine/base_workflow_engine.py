@@ -637,15 +637,8 @@ class BaseWorkflowEngine(EngineStorageMixin, ABC):
         if step_spec.context_builder:
             context.update(step_spec.context_builder(item, step_input, self))
 
-        print('context builder')
-        print(context)
-
-
         # If no user message, just render the current view
         user_message = step_input.context.get("user_message")
-
-        print('user_message')
-        print(user_message)
 
         if not user_message:
             view = renderer(current_obj, context)
@@ -657,13 +650,13 @@ class BaseWorkflowEngine(EngineStorageMixin, ABC):
         # Interpret the user request
         edit_request = interpreter(user_message, current_obj, context)
 
-        print('edit_request')
+        print('custom step: edit_request')
         print(edit_request)
 
         # Apply the edit
         new_obj = handler(current_obj, edit_request, context)
 
-        print('new_obj')
+        print('custom step: new_obj')
         print(new_obj)
 
         # Validate

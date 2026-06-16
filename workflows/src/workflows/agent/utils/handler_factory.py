@@ -61,7 +61,9 @@ def make_choice_handlers(config: ChoiceConfig):
         query = intent.parameters.get("query", "").lower()
         items = load_items(agent)
 
-        filtered = [i for i in items if query in identifying_text(i)]
+        filtered = [
+            i for i in items if query in identifying_text(i)
+        ]
 
         if not filtered:
             msg = HandlerMessage(
@@ -312,14 +314,25 @@ def make_edit_handlers(config: EditConfig):
         old_value = artifact[field]
         new_value = edits[field]
 
+        bullets=[
+            f"Field: **{field}**",
+            f"Old: {old_value}",
+            f"New: {new_value}",
+            "Current Item:"
+        ]
+
+        for key, value in artifact.items():
+            if isinstance(value, dict):
+                bullets.append(f"**{key}**:")
+                for subk, subv in value.items():
+                    bullets.append(f"  - {subk}: {subv}")
+            else:
+                bullets.append(f"**{key}**: {value}")
+
         msg = HandlerMessage(
             title="Metadata Updated",
             body="Your changes have been applied.",
-            bullets=[
-                f"Field: **{field}**",
-                f"Old: {old_value}",
-                f"New: {new_value}",
-            ],
+            bullets= bullets,
             footer="You can continue editing or say *approve this* to finalize."
         )
 

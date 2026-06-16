@@ -1,5 +1,7 @@
 from pydantic import create_model
 import time
+import re
+import json
 
 from ..parsing.json_parser import DefaultJSONParser
 from ..backends.timeout import TimeoutRunnable
@@ -14,9 +16,8 @@ from ..logging.logger import get_logger
 
 logger = get_logger("llm.engine")
 
-
 class BaseLLMEngine:
-    def __init__(self, backend, parser=None, timeout: int = 10, delay: int = 3, debug: bool = True):
+    def __init__(self, backend, parser=None, timeout: int = 10, delay: int = 3, debug: bool = False):
         self.backend = backend
         self.parser = parser or DefaultJSONParser()
         self.timeout = timeout
@@ -31,17 +32,37 @@ class BaseLLMEngine:
             print(f"[LLM DEBUG] {label}:\n{value}\n")
 
     # -------------------------
+    # SANITIZATION (NEW)
+    # -------------------------
+    def _sanitize(self, raw: str) -> str:
+        if not raw:
+            return ""
+
+        # Remove ```json or ``` fences
+        cleaned = re.sub(r"```(?:json)?", "", raw, flags=re.IGNORECASE)
+        cleaned = cleaned.replace("```", "")
+
+        # Remove leading/trailing whitespace
+        cleaned = cleaned.strip()
+
+        return cleaned
+
+    # -------------------------
     # INTERNAL BACKEND CALL
     # -------------------------
-
     def _call_backend(self, prompt: str) -> str:
-
         runner = TimeoutRunnable(self.backend.generate, timeout=self.timeout)
         raw = runner(prompt)
 
         time.sleep(self.delay)
 
-        return raw
+        # NEW: sanitize once, globally
+        cleaned = self._sanitize(raw)
+
+        if self.debug:
+            self._debug("SANITIZED OUTPUT", cleaned)
+
+        return cleaned
 
     # -------------------------
     # GENERAL ANSWER
@@ -72,23 +93,16 @@ class BaseLLMEngine:
 
         return GeneralAnswerSchema(**parsed)
 
-
     # -------------------------
     # METADATA (dynamic)
     # -------------------------
     @log_engine_call("metadata")
     def metadata(self, text: str):
-        """
-        Dynamic metadata extractor.
-        The model may return ANY JSON keys.
-        We parse them and build a dynamic Pydantic model.
-        """
-
         prompt = f"""
         You are a careful and precise metadata generator.
 
         You MUST return valid JSON.
-        The JSON may contain ANY keys that you believe represent metadata.
+        The JSON may contain ANY keys.
         Do NOT include explanations, preamble, or commentary.
 
         Text:
@@ -96,18 +110,14 @@ class BaseLLMEngine:
         """
 
         raw = self._call_backend(prompt)
-
-        # No expected keys → parser returns whatever JSON it finds
         parsed = self.parser.parse(raw)
 
-        # Build a dynamic Pydantic model with fields inferred from the JSON
         DynamicMetadataSchema = create_model(
             "DynamicMetadataSchema",
             **{key: (type(value), None) for key, value in parsed.items()},
         )
 
         return DynamicMetadataSchema(**parsed)
-
 
     # -------------------------
     # EDIT
@@ -174,11 +184,6 @@ class BaseLLMEngine:
     # -------------------------
     @log_engine_call("extract")
     def extract(self, text: str, fields: list[str]):
-        """
-        Extract specific fields from text.
-        Returns a dynamic Pydantic model.
-        """
-
         fields_str = ", ".join(f'"{f}"' for f in fields)
 
         prompt = f"""
@@ -201,7 +206,6 @@ class BaseLLMEngine:
         raw = self._call_backend(prompt)
         parsed = self.parser.parse(raw, expected_keys=fields)
 
-        # Create a dynamic schema model
         DynamicSchema = create_model(
             "DynamicExtractionSchema",
             **{field: (str | None, None) for field in fields},

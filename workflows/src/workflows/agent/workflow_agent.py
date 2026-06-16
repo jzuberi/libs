@@ -399,9 +399,6 @@ class WorkflowAgent(StepContextAgentMixin):
 
         self.engine.refresh()
 
-        print('handle message session:')
-        print(self.session)
-
         # --------------------------------------------------------------
         # 1. Normal intent parsing (Stage 1 + Stage 2 when LLM is present)
         # --------------------------------------------------------------
@@ -446,15 +443,6 @@ class WorkflowAgent(StepContextAgentMixin):
 
             if intent.intent == "clarify_pending" and self.session.pending_intent is not None:
                 return self._handle_pending_message(message, trace)
-
-            """
-
-            # Stage 1.5: derive relevant_context for this intent
-            relevant_context = build_relevant_context_for_intent(
-                self,
-                intent,
-            )
-            """
 
             relevant_context = build_relevant_context_for_intent(
                 self,

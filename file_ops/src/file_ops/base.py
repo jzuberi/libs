@@ -37,11 +37,18 @@ class FileOps:
 
     # ---------- path normalization ----------
 
+    from pathlib import Path
+
     def _p(self, path: Path | str) -> Path:
-        p = ensure_path(path)
+        # DO NOT absolutize here; just wrap as Path
+        p = Path(path)
+
+        # Only apply root when path is relative
         if self.root and not p.is_absolute():
             p = self.root / p
+
         return p
+
 
     # ---------- directory operations ----------
 
@@ -108,30 +115,24 @@ class FileOps:
         """
         Upsert a list of records into a JSON file that stores a list of dicts.
 
-        - If a record with the same key exists → merge/replace it
+        - If a record with the same key exists → replace it
         - If not → append it
         """
         if default is None:
             default = []
 
         def updater(existing: list[dict]):
-            # Convert list → dict keyed by `key` for fast merging
+            # Convert list → dict keyed by `key`
             index = {rec[key]: rec for rec in existing}
 
             for rec in new_records:
                 rec_id = rec[key]
-                if rec_id in index:
-                    # merge existing + new
-                    index[rec_id] = {**index[rec_id], **rec}
-                else:
-                    # insert new
-                    index[rec_id] = rec
+                # FULL REPLACEMENT — no shallow merge
+                index[rec_id] = rec
 
-            # Return list again
             return list(index.values())
 
         return self.update_json(path, updater, default=default)
-
 
 
     def update_json(

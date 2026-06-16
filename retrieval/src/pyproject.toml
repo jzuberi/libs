@@ -1,0 +1,17 @@
+[project]
+name = "retrieval"
+version = "0.0.1"
+description = "A retrieval library which requires a backend-agnostic RAG storage library"
+authors = [{ name = "jzubes" }]
+requires-python = ">=3.10"
+
+dependencies = [
+    "pydantic>=2.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+package = true

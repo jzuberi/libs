@@ -1,0 +1,12 @@
+[project]
+name = "interpretive"
+version = "0.1.0"
+description = "Minimal shared infrastructure for interpretive layers"
+requires-python = ">=3.10"
+dependencies = [
+    "pydantic>=2.0",
+]
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
