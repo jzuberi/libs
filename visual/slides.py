@@ -8,7 +8,276 @@ from PIL import Image, ImageDraw, ImageFont
 import cairosvg, io
 import numpy as np
 
-from moviepy.editor import VideoFileClip, ImageClip, CompositeVideoClip
+from moviepy.editor import VideoFileClip, ImageClip, CompositeVideoClip, ImageClip, ColorClip
+import xml.etree.ElementTree as ET
+
+
+
+
+class SlideAnimator:
+    def __init__(self, png_path, slot_geometries, audio_clip):
+        self.png_path = png_path
+        self.slot_geometries = slot_geometries
+        self.audio_clip = audio_clip
+        self.duration = audio_clip.duration
+
+        print("\n[SlideAnimator.__init__]")
+        print("  png_path:", self.png_path)
+        print("  duration (audio):", self.duration)
+        print("  slots keys:", list(self.slot_geometries.keys()))
+
+    # ------------------------------------------------------------
+    # Correct fade logic for RGBA clips
+    # ------------------------------------------------------------
+    def apply_animation_relative(self, clip, anim):
+        print("\n[apply_animation_relative] ENTER")
+    
+        # Ensure mask exists
+        mask = clip.mask
+        if mask is None:
+            mask = ImageClip(np.ones((clip.h, clip.w)) * 255).set_duration(self.duration)
+            clip = clip.set_mask(mask)
+    
+        # ------------------------------------------------------------
+        # Fade-in / fade-out (your existing logic)
+        # ------------------------------------------------------------
+        if "in" in anim:
+            a = anim["in"]
+            mask = mask.fadein(a.get("duration", 0.4))
+    
+        if "out" in anim:
+            a = anim["out"]
+            mask = mask.fadeout(a.get("duration", 0.6))
+    
+        # ------------------------------------------------------------
+        # ⭐ NEW: Pulse animation
+        # ------------------------------------------------------------
+        if anim.get("type") == "pulse":
+            freq = anim.get("frequency", 8.0)      # much faster
+            min_alpha = anim.get("min", 0.7)       # barely changes
+            max_alpha = anim.get("max", 1.0)
+        
+            def pulse_alpha(gf, t):
+                # triangle wave (sharper, more glitchy)
+                tri = abs((t * freq) % 2 - 1)
+        
+                # small random jitter
+                jitter = np.random.uniform(-0.05, 0.05)
+        
+                # combine
+                alpha = min_alpha + (max_alpha - min_alpha) * tri + jitter
+        
+                # clamp
+                alpha = max(0.0, min(1.0, alpha))
+        
+                # apply to full mask frame
+                frame = gf(t)
+                return frame * alpha
+        
+            mask = mask.fl(pulse_alpha)
+
+
+    
+        clip = clip.set_mask(mask)
+        print("[apply_animation_relative] EXIT")
+        return clip
+
+
+    # ------------------------------------------------------------
+    # Build final composite clip
+    # ------------------------------------------------------------
+    def build(self):
+        print("\n[SlideAnimator.build] BEGIN")
+        print("  duration:", self.duration)
+
+        # Base PNG
+        base = (
+            ImageClip(self.png_path)
+            .set_duration(self.duration)
+            .set_start(0)
+            .set_audio(self.audio_clip)
+        )
+
+        overlays = []
+
+        for name, geo in self.slot_geometries.items():
+            print("\n[SlideAnimator.build] slot:", name)
+            print("  geo:", geo)
+
+            if geo["type"] != "svg":
+                continue
+
+            png_bytes = cairosvg.svg2png(
+                url=geo["path"],
+                output_width=geo["width"],
+                output_height=geo["height"]
+            )
+            svg_img = Image.open(io.BytesIO(png_bytes)).convert("RGBA")
+
+            clip = ImageClip(np.array(svg_img)).set_position((geo["x"], geo["y"]))
+            clip = clip.set_duration(self.duration).set_start(0)
+
+            anim = geo.get("animate")
+            if anim:
+                clip = self.apply_animation_relative(clip, anim)
+
+            overlays.append(clip)
+
+        print("\n[SlideAnimator.build] overlays count:", len(overlays))
+
+        comp = CompositeVideoClip([base] + overlays)
+        print("[SlideAnimator.build] END")
+
+        return comp
+
+
+def apply_animation_relative(self, clip, anim):
+    # Fade-in
+    if "in" in anim:
+        a = anim["in"]
+        start_at = a.get("start_at", "start")
+
+        if start_at == "start":
+            clip = clip.set_start(0).fadein(a["duration"])
+        elif isinstance(start_at, (int, float)):
+            clip = clip.set_start(start_at).fadein(a["duration"])
+
+    # Fade-out
+    if "out" in anim:
+        a = anim["out"]
+        start_at = a.get("start_at", "end")
+
+        if start_at == "end":
+            start_time = self.duration - a["duration"]
+            clip = clip.set_start(start_time).fadeout(a["duration"])
+        elif isinstance(start_at, (int, float)):
+            clip = clip.set_start(start_at).fadeout(a["duration"])
+
+    return clip
+
+
+
+def mask_svg_to_circle(input_path, rgb=(0,0,0), output_path=None):
+    """
+    Apply a perfectly smooth circular fade near the edges of an SVG,
+    fading toward the given RGB tuple. The center remains fully original.
+    """
+
+    tree = ET.parse(input_path)
+    root = tree.getroot()
+
+    ET.register_namespace("", "http://www.w3.org/2000/svg")
+
+    # Extract viewBox
+    viewBox = root.get("viewBox")
+    if not viewBox:
+        raise ValueError("SVG must have a viewBox to compute circle mask.")
+
+    min_x, min_y, width, height = map(float, viewBox.split())
+
+    # Slightly smaller circle to avoid clipping
+    base_r = min(width, height) / 2
+    r = base_r * 0.90   # <-- shrink circle a bit more
+
+    cx = min_x + width / 2
+    cy = min_y + height / 2
+
+    # Ensure <defs> exists
+    defs = root.find("{http://www.w3.org/2000/svg}defs")
+    if defs is None:
+        defs = ET.SubElement(root, "defs")
+
+    # ---------------------------------------------------------
+    # Smooth feather mask using Gaussian blur + gamma correction
+    # ---------------------------------------------------------
+    mask = ET.SubElement(defs, "mask", {"id": "circleFadeMask"})
+
+    # Hard circle (will be blurred)
+    hard_circle = ET.SubElement(
+        mask,
+        "circle",
+        {
+            "cx": str(cx),
+            "cy": str(cy),
+            "r": str(r),
+            "fill": "white"
+        }
+    )
+
+    # Feather filter with expanded region
+    filt = ET.SubElement(
+        defs,
+        "filter",
+        {
+            "id": "featherFilter",
+            "x": "-20%",
+            "y": "-20%",
+            "width": "140%",
+            "height": "140%",
+            "color-interpolation-filters": "sRGB"
+        }
+    )
+
+    # Larger blur radius → smoother fade
+    ET.SubElement(
+        filt,
+        "feGaussianBlur",
+        {
+            "in": "SourceGraphic",
+            "stdDeviation": str(r * 0.20)  # smoother feather
+        }
+    )
+
+    # Gamma correction → removes banding
+    comp = ET.SubElement(filt, "feComponentTransfer")
+    ET.SubElement(comp, "feFuncA", {
+        "type": "gamma",
+        "exponent": "1.8",   # smoother falloff curve
+        "amplitude": "1"
+    })
+
+    # Apply filter to circle
+    hard_circle.set("filter", "url(#featherFilter)")
+
+    # ---------------------------------------------------------
+    # Background rectangle filled with fade color
+    # ---------------------------------------------------------
+    fade_color = f"rgb({rgb[0]},{rgb[1]},{rgb[2]})"
+    bg_rect = ET.Element(
+        "rect",
+        {
+            "x": str(min_x),
+            "y": str(min_y),
+            "width": str(width),
+            "height": str(height),
+            "fill": fade_color
+        }
+    )
+
+    # ---------------------------------------------------------
+    # Wrap original content in masked group
+    # ---------------------------------------------------------
+    masked_group = ET.Element("g", {"mask": "url(#circleFadeMask)"})
+
+    for child in list(root):
+        if child.tag.endswith("defs"):
+            continue
+        root.remove(child)
+        masked_group.append(child)
+
+    root.append(bg_rect)
+    root.append(masked_group)
+
+    # Save output
+    if output_path is None:
+        output_path = input_path.replace(".svg", "_circle_fade.svg")
+
+    tree.write(output_path)
+    return output_path
+
+
+
+
 
 
 def render_graph_slot(*, geom, payload, output_path):
@@ -244,7 +513,8 @@ class SlideRenderer:
                     "line_h": line_h,
                     "height": total_h,
                     "color": normalize_color(block.get("color", self.default_color)),
-                    "gap_after": block.get("gap_after", 20) * g
+                    "gap_after": block.get("gap_after", 20) * g,
+                    "animate": block.get("animate")
                 })
             elif btype == "text_and_background":
                 base_size = block.get("size", 60)
@@ -347,7 +617,8 @@ class SlideRenderer:
                     "lines": lines,
                     "width": max_line_width,
                     "height": total_height,
-                    "gap_after": block.get("gap_after", 20) * g,  # ✅ use g here too
+                    "gap_after": block.get("gap_after", 20) * g,
+                    "animate": block.get("animate")
                 })
 
 
@@ -365,8 +636,10 @@ class SlideRenderer:
                     "path": block["path"],
                     "width": target_w,
                     "height": target_w,
-                    "gap_after": block.get("gap_after", 20) * g
+                    "gap_after": block.get("gap_after", 20) * g,
+                    "animate": block.get("animate")
                 })
+
 
             # -----------------------------
             # DIVIDER
@@ -535,7 +808,6 @@ class SlideRenderer:
             # TEXT
             # -----------------------------
             if btype == "text":
-                # compute safe area once
                 safe_left = padding
                 safe_right = W - padding
                 if frame:
@@ -551,17 +823,14 @@ class SlideRenderer:
                     y += m["line_h"]
 
             elif btype == "text_and_background":
-
                 x1 = 0
                 x2 = W
 
-                # draw background
                 draw.rectangle(
                     [x1, y, x2, y + m["height"]],
                     fill=m["bg_color"]
                 )
 
-                # draw text centered inside the band
                 safe_width = x2 - x1
                 ty = y + m["pad_top"]
 
@@ -571,16 +840,11 @@ class SlideRenderer:
                     draw.text((tx, ty), line, font=m["font"], fill=m["color"])
                     ty += m["line_h"]
 
-
-            # -----------------------------
-            # RICH TEXT
-            # -----------------------------
             # -----------------------------
             # RICH TEXT (wrapped)
             # -----------------------------
             elif btype == "rich_text":
                 for line in m["lines"]:
-                    
                     safe_left = padding
                     safe_right = W - padding
                     if frame:
@@ -598,23 +862,50 @@ class SlideRenderer:
                             fill=tuple(sp["color"])
                         )
                         x += sp["width"]
-                        
+
                     y += line["height"]
-
-
 
             # -----------------------------
             # SVG
             # -----------------------------
             elif btype == "svg":
+                print("\n[DEBUG] SVG block:")
+                print("  path:", m["path"])
+                print("  requested width:", m["width"])
+                print("  requested height:", m["height"])
+                print("  scale:", m.get("scale"))
+
+                # If animated → DO NOT draw into PNG
+                if m.get("animate"):
+                    x = max(0, (W - m["width"]) // 2)
+                    print("  computed x:", x)
+                    print("  computed y:", int(y))
+
+                    self.slot_geometries[f"svg_{m['index']}"] = {
+                        "type": "svg",
+                        "x": x,
+                        "y": int(y),
+                        "width": m["width"],
+                        "height": m["height"],
+                        "path": m["path"],
+                        "animate": m.get("animate"),
+                    }
+
+                    continue
+
+                # Otherwise → STATIC SVG → draw normally
                 png_bytes = cairosvg.svg2png(
                     url=m["path"],
                     output_width=m["width"],
                     output_height=m["height"]
                 )
                 svg_img = Image.open(io.BytesIO(png_bytes)).convert("RGBA")
+
                 x = (W - m["width"]) // 2
                 img.paste(svg_img, (x, int(y)), svg_img)
+
+
+
 
             # -----------------------------
             # DIVIDER
@@ -629,7 +920,7 @@ class SlideRenderer:
             # SPACER
             # -----------------------------
             elif btype == "spacer":
-                pass  # spacer only affects vertical flow
+                pass
 
             # -----------------------------
             # SLOT
@@ -682,8 +973,6 @@ class SlideRenderer:
                 outline=color,
                 width=int(thickness)
             )
-
-
 
         # draw blocks
         self.draw_blocks(draw, img, measured, positions, padding, frame)
@@ -889,12 +1178,12 @@ class DynamicSlide:
         self._upscale()
         return str(self.fpath_final)
 
+
+
 class ScrollSlide:
     """
     A behavior class that uses SlideRenderer to create a tall slide
     and then animates it vertically over time.
-
-    Fonts are passed as paths in layout_spec["fonts"], consistent with SlideRenderer.
     """
 
     def __init__(
@@ -905,7 +1194,6 @@ class ScrollSlide:
     ):
         self.layout_spec = layout_spec
         
-        
         self.canvas_size = (
             int(canvas_size[0] * scale),
             int(canvas_size[1] * scale)
@@ -913,24 +1201,17 @@ class ScrollSlide:
         self.scale = scale
         
         canvas_height = measure_slide_height(
-                layout_spec, 
-                self.canvas_size[0], 
-                scale=1.0
-            )
+            layout_spec, 
+            self.canvas_size[0], 
+            scale=1.0
+        )
 
-        # SlideRenderer handles layout + scaling + font loading
         self.renderer = SlideRenderer(
             layout_spec=layout_spec,
-            canvas_size=(
-                self.canvas_size[0],
-                canvas_height
-            ),
+            canvas_size=(self.canvas_size[0], canvas_height),
             scale=scale,
         )
-        
-    # ------------------------------------------------------------
-    # Helper: build rich_text blocks for transcript segments
-    # ------------------------------------------------------------
+
     @staticmethod
     def build_transcript_blocks(
         segments,
@@ -942,28 +1223,19 @@ class ScrollSlide:
         content_color=[255, 255, 255],
         gap_after=20,
     ):
-        """
-        Convert transcript segments into rich_text blocks.
-        Each segment becomes one rich_text block with:
-            SPEAKER: content
-        """
         blocks = []
-
         for seg in segments:
-            speaker = seg["speaker"]
-            content = seg["content"]
-
             blocks.append({
                 "type": "rich_text",
                 "spans": [
                     {
-                        "text": speaker,
+                        "text": seg["speaker"],
                         "font": speaker_font,
                         "size": speaker_size,
                         "color": speaker_color,
                     },
                     {
-                        "text": content,
+                        "text": seg["content"],
                         "font": content_font,
                         "size": content_size,
                         "color": content_color,
@@ -971,24 +1243,17 @@ class ScrollSlide:
                 ],
                 "gap_after": gap_after,
             })
-
         return blocks
 
-
     # ------------------------------------------------------------
-    # Render the tall static slide
+    # Render tall static slide (main content)
     # ------------------------------------------------------------
     def render_static(self):
-        """
-        Returns:
-            img: PIL image (tall)
-            height: int
-        """
         img = self.renderer.render()
         return img, img.size[1]
 
     # ------------------------------------------------------------
-    # Build a MoviePy clip with scroll animation
+    # Build MoviePy scroll clip
     # ------------------------------------------------------------
     def to_clip(
         self,
@@ -997,71 +1262,127 @@ class ScrollSlide:
         extra_silence=0.0,
         bg_color=(0, 0, 0),
     ):
-        """
-        Create a scrolling MoviePy clip.
 
-        Args:
-            duration: total scroll duration (seconds)
-            audio: optional MoviePy audio clip
-            extra_silence: time after scroll finishes
-            bg_color: background color behind the scroll
+        # ------------------------------------------------------------
+        # 1. Render main tall slide
+        # ------------------------------------------------------------
+        main_img, main_height = self.render_static()
 
-        Returns:
-            CompositeVideoClip
-        """
-        
-        def scroll_position(t):
-            progress = min(max(t / duration, 0.0), 1.0)
-            y = y_start + progress * (y_end - y_start)
-            return ("center", y)
-        
-        from moviepy.editor import ImageClip, CompositeVideoClip, ColorClip
-
-        img, text_height = self.render_static()
-        
-        img = trim_bottom_empty_space(
-            img, 
+        # Trim empty bottom space
+        main_img = trim_bottom_empty_space(
+            main_img,
             bg_color=self.layout_spec["background_color"]
+        )
+        main_height = main_img.size[1]
+
+        # ------------------------------------------------------------
+        # 2. OPTIONAL INTRO IMAGE (full width)
+        # ------------------------------------------------------------
+        intro_spec = self.layout_spec.get("intro_image")
+
+        if intro_spec is not None:
+
+            intro_layout = {
+                "background_color": self.layout_spec["background_color"],
+                "padding": intro_spec.get("padding", self.layout_spec.get("padding", 40)),
+                "fonts": self.layout_spec["fonts"],
+                "blocks": [
+                    {
+                        "type": "svg",
+                        "path": intro_spec["path"],
+                        "gap_after": intro_spec.get("gap_after", 40),
+                        "scale": intro_spec.get("scale", 0.25)
+                    }
+                ]
+            }
+
+            print(intro_layout)
+
+            intro_height = measure_slide_height(
+                intro_layout,
+                self.canvas_size[0],
+                scale=1.0
             )
 
-        text_height = img.size[1]
+            intro_renderer = SlideRenderer(
+                layout_spec=intro_layout,
+                canvas_size=(self.canvas_size[0], intro_height),
+                scale=self.scale
+            )
 
-        W, H = self.canvas_size
-        
-        # Save temp image
+            intro_img = intro_renderer.render()
+
+            # ------------------------------------------------------------
+            # 3. Stack intro + main into one tall image
+            # ------------------------------------------------------------
+            combined_height = intro_img.size[1] + main_img.size[1]
+            img = Image.new(
+                "RGBA",
+                (self.canvas_size[0], combined_height),
+                self.layout_spec["background_color"]
+            )
+
+            img.paste(intro_img, (0, 0))
+            img.paste(main_img, (0, intro_img.size[1]))
+
+            text_height = combined_height
+
+        else:
+            # No intro image → revert to original behavior
+            img = main_img
+            text_height = main_height
+
+        # ------------------------------------------------------------
+        # 4. Save tall image for MoviePy (NOW includes intro!)
+        # ------------------------------------------------------------
         temp_path = "_scrollslide_temp.png"
         img.save(temp_path)
 
-        # Wrap in ImageClip
         txt_clip = ImageClip(temp_path)
 
         # Determine duration
         if duration is None:
-            if audio is not None:
-                duration = audio.duration + extra_silence
-            else:
-                duration = 8.0  # default fallback
+            duration = (
+                audio.duration + extra_silence
+                if audio is not None
+                else 8.0
+            )
 
-        # Compute scroll positions
-        y_start = H
-        y_end = H - text_height - 200
+        W, H = self.canvas_size
+
+        # Scroll math
+        # y_start depends on whether intro image exists
+        if intro_spec is not None:
+            y_start = 400
+        else:
+            y_start = 1500
+
+        y_end = H - text_height - 450
+
+        def scroll_position(t):
+            
+            progress = min(max(t / duration, 0.0), 1.0)
+            y = y_start + progress * (y_end - y_start)
+            return ("center", y)
 
         txt_clip = txt_clip.set_duration(duration).set_position(scroll_position)
 
         # Background
         background = ColorClip(
-            size=self.canvas_size, 
-            color=self.layout_spec['background_color'], 
+            size=self.canvas_size,
+            color=self.layout_spec["background_color"],
             duration=duration
         )
 
         overlay_clips = [background, txt_clip]
 
+        # ------------------------------------------------------------
+        # 5. HEADER OVERLAY (unchanged)
+        # ------------------------------------------------------------
         header_spec = self.layout_spec.get("header")
-        
+
         if header_spec is not None:
-            
-            # Build a minimal layout_spec for the header
+
             header_layout = {
                 "background_color": header_spec.get("bg_color", [0,0,0]),
                 "padding": header_spec.get("padding", 40),
@@ -1077,19 +1398,16 @@ class ScrollSlide:
                     }
                 ]
             }
-            
-            print(header_layout)
-            
+
             canvas_height = measure_slide_height(
-                header_layout, 
-                W, 
+                header_layout,
+                W,
                 scale=1.0
             )
 
-            # Render header using SlideRenderer
             header_renderer = SlideRenderer(
                 layout_spec=header_layout,
-                canvas_size=(self.canvas_size[0], canvas_height),  # temporary height
+                canvas_size=(self.canvas_size[0], canvas_height),
                 scale=self.scale
             )
 
@@ -1106,14 +1424,13 @@ class ScrollSlide:
 
             overlay_clips.append(header_clip)
 
-        
-        # Composite
         scroll_clip = CompositeVideoClip(overlay_clips)
 
         if audio is not None:
             scroll_clip = scroll_clip.set_audio(audio)
 
         return scroll_clip
+
 
 def measure_slide_height(layout_spec, width, scale=1.0):
     TEMP_HEIGHT = 100000

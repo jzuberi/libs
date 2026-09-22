@@ -1,7 +1,7 @@
 
 from .models import RetrievalIntent, IntentType
 from .grading import BooleanGrader
-from .retrieval import RetrievalLayer
+from .retrieval import RetrievalLayer, TopicFilterStrategy
 from .intent_builder import RetrievalIntentBuilder
 
 
@@ -11,4 +11,5 @@ __all__ = [
     "BooleanGrader",
     "RetrievalLayer",
     "RetrievalIntentBuilder",
+    "TopicFilterStrategy"
 ]

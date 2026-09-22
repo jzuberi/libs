@@ -1,17 +1,8 @@
 [project]
 name = "semanticsubgraph"
 version = "0.1.0"
-description = "Add your description here"
-readme = "README.md"
-authors = [
-    { email = "chat.jamesz@gmail.com" }
+dependencies = [
+    "numpy",
+    "scikit-learn",
+    "rapidfuzz",
 ]
-requires-python = ">=3.1"
-dependencies = []
-
-[project.scripts]
-semanticsubgraph = "semanticsubgraph:main"
-
-[build-system]
-requires = ["uv_build>=0.9.15,<0.10.0"]
-build-backend = "uv_build"

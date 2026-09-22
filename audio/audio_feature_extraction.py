@@ -1,3 +1,5 @@
+import os, sys
+
 import librosa
 import torch
 from transformers import AutoModelForAudioClassification, AutoFeatureExtractor
@@ -5,12 +7,34 @@ from itertools import chain
 
 import math
 from collections import defaultdict
-
+"""
 MODEL_ID = "MIT/ast-finetuned-audioset-10-10-0.4593"
+os.environ["TRANSFORMERS_OFFLINE"] = "1"
 
 feature_extractor = AutoFeatureExtractor.from_pretrained(MODEL_ID)
 model = AutoModelForAudioClassification.from_pretrained(MODEL_ID)
 model.eval()
+"""
+
+import os
+os.environ["TRANSFORMERS_OFFLINE"] = "1"
+
+from transformers import AutoModelForAudioClassification, AutoFeatureExtractor
+
+LOCAL_DIR = "/Users/pense/.cache/huggingface/hub/models--MIT--ast-finetuned-audioset-10-10-0.4593/snapshots/f826b80d28226b62986cc218e5cec390b1096902"
+
+feature_extractor = AutoFeatureExtractor.from_pretrained(
+    LOCAL_DIR,
+    local_files_only=True
+)
+
+model = AutoModelForAudioClassification.from_pretrained(
+    LOCAL_DIR,
+    local_files_only=True
+)
+
+model.eval()
+
 
 
 def load_audio(input_file, sr=16000, mono=True):

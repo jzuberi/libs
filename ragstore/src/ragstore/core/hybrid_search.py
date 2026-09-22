@@ -1,9 +1,62 @@
 from collections import defaultdict, Counter
 from typing import Dict, List, Tuple
 
-
-import json
+import json, os
 from pathlib import Path
+import numpy as np
+
+
+def mmr(
+    query_vec,
+    doc_ids,
+    doc_vecs,
+    k=10,
+    lambda_mult=0.5
+):
+    cleaned = [(i, v) for i, v in zip(doc_ids, doc_vecs) if isinstance(v, (list, np.ndarray))]
+    if not cleaned:
+        return doc_ids[:k]
+
+    doc_ids, doc_vecs = zip(*cleaned)
+    doc_vecs = [np.array(v, dtype=float) for v in doc_vecs]
+
+    if len(doc_vecs) == 0:
+        return doc_ids[:k]
+
+    doc_sims = np.array([np.dot(query_vec, dv) for dv in doc_vecs])
+
+    try:
+        doc_vecs_np = np.vstack(doc_vecs)
+    except ValueError:
+        return doc_ids[:k]
+
+    selected = []
+    remaining = list(range(len(doc_ids)))
+
+    for _ in range(min(k, len(doc_ids))):
+        if not remaining:
+            break
+
+        if not selected:
+            idx = remaining[np.argmax(doc_sims[remaining])]
+            selected.append(idx)
+            remaining.remove(idx)
+            continue
+
+        selected_vecs = doc_vecs_np[selected]
+        sim_to_selected = np.max(selected_vecs @ doc_vecs_np[remaining].T, axis=0)
+
+        mmr_scores = (
+            lambda_mult * doc_sims[remaining]
+            - (1 - lambda_mult) * sim_to_selected
+        )
+
+        idx = remaining[np.argmax(mmr_scores)]
+        selected.append(idx)
+        remaining.remove(idx)
+
+    return [doc_ids[i] for i in selected]
+
 
 class HybridSearchEngine:
     def __init__(self, persist_path: str | None = None):
@@ -13,13 +66,16 @@ class HybridSearchEngine:
         self.inverted_index = {}
         self.doc_lengths = {}
 
-        # If persistence exists, load it
+        self._dirty = False  # NEW: track unsaved changes
+
         if self.persist_path and self.persist_path.exists():
             self._load()
 
+    # -----------------------------
+    # Atomic save (unchanged)
+    # -----------------------------
     def _save(self):
-        if not self.persist_path:
-            return
+        tmp_path = Path(str(self.persist_path) + ".tmp")
 
         data = {
             "documents": self.documents,
@@ -27,17 +83,38 @@ class HybridSearchEngine:
             "doc_lengths": self.doc_lengths,
         }
 
-        with open(self.persist_path, "w") as f:
+        with open(tmp_path, "w") as f:
             json.dump(data, f)
 
+        os.replace(tmp_path, self.persist_path)
+
+    # -----------------------------
+    # NEW: flush method
+    # -----------------------------
+    def flush(self):
+        if self._dirty:
+            self._save()
+            self._dirty = False
+
+    # -----------------------------
+    # Load
+    # -----------------------------
+        
     def _load(self):
-        with open(self.persist_path, "r") as f:
-            data = json.load(f)
+        try:
+            with open(self.persist_path, "r") as f:
+                data = json.load(f)
+        except Exception:
+            print("Hybrid index corrupted or unreadable — rebuilding empty index...")
+            self.documents = {}
+            self.inverted_index = {}
+            self.doc_lengths = {}
+            self._save()   # write a clean empty index
+            return
 
         self.documents = data["documents"]
         self.inverted_index = data["inverted_index"]
         self.doc_lengths = data["doc_lengths"]
-
 
 
     # -----------------------------
@@ -64,12 +141,11 @@ class HybridSearchEngine:
                 self.inverted_index[tok] = {}
             self.inverted_index[tok][doc_id] = freq
 
-        # NEW: persist after update
-        self._save()
-
+        # OLD (removed): self._save()
+        self._dirty = True  # NEW: mark as needing save
 
     # -----------------------------
-    # Simple keyword search
+    # Keyword search
     # -----------------------------
     def keyword_search(
         self,
@@ -88,14 +164,13 @@ class HybridSearchEngine:
             for doc_id, tf in postings.items():
                 if allowed_ids is not None and doc_id not in allowed_ids:
                     continue
-                # very simple score: sum of term frequencies
                 scores[doc_id] += float(tf)
 
         ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
         return ranked[:k]
-    
+
     # -----------------------------
-    # Hybrid search (vector + keyword)
+    # Hybrid search
     # -----------------------------
     def hybrid_search(
         self,
@@ -103,22 +178,38 @@ class HybridSearchEngine:
         ragstore,
         k: int = 10,
         filter: dict | None = None,
+        expansion_factor: int = 3,
+        diversify: bool = False,
     ) -> list[str]:
 
-        # 1. Vector search via RAGStore (not backend)
-        vec_results = ragstore.query_vector(query, k=k, filter=filter)
-        vec_hits = list(zip(vec_results["ids"], vec_results["distances"]))
+        expanded_k = k * expansion_factor
 
+        vec_results = ragstore.query_vector(query, k=expanded_k, filter=filter)
+        vec_ids = vec_results["ids"]
+        vec_dists = vec_results["distances"]
 
-        # 2. Keyword search (filter-aware)
-        allowed_ids = vec_results["ids"] if filter else None
+        kw_hits = self.keyword_search(query, k=expanded_k, allowed_ids=None)
 
-        kw_hits = self.keyword_search(query, k=k, allowed_ids=allowed_ids)
+        fused_ids = self._fuse_rrf(
+            list(zip(vec_ids, vec_dists)),
+            kw_hits,
+            k=expanded_k
+        )
 
-        # 3. Fuse
-        fused = self._fuse_rrf(vec_hits, kw_hits, k=k)
-        return fused
+        if diversify:
+            query_vec = ragstore.embeddings.embed_query(query)
+            doc_vecs = ragstore.backend.get_vectors(fused_ids)
 
+            diversified = mmr(
+                query_vec=query_vec,
+                doc_ids=fused_ids,
+                doc_vecs=doc_vecs,
+                k=k,
+                lambda_mult=0.75
+            )
+            return diversified
+
+        return fused_ids[:k]
 
     # -----------------------------
     # RRF fusion
@@ -132,14 +223,11 @@ class HybridSearchEngine:
     ) -> list[str]:
         scores = defaultdict(float)
 
-        # vector hits
         for rank, (doc_id, _) in enumerate(vec_hits):
             scores[doc_id] += 1 / (c + rank)
 
-        # keyword hits
         for rank, (doc_id, _) in enumerate(kw_hits):
             scores[doc_id] += 1 / (c + rank)
 
         ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
         return [doc_id for doc_id, _ in ranked[:k]]
-

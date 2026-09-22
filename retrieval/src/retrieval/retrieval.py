@@ -38,11 +38,12 @@ class BaseStrategy:
 
 
 class TopicFilterStrategy(BaseStrategy):
+
     def __init__(self, grader, indicator_handlers):
         self.grader = grader
         self.indicator_handlers = indicator_handlers
 
-    def build_prompt(self, chunk: Any, intent: RetrievalIntent, debug=True) -> str:
+    def build_prompt(self, chunk: Any, intent: RetrievalIntent, debug=False) -> str:
         text = extract_text(chunk)
 
         if debug:
@@ -77,7 +78,6 @@ No extra keys. No commentary outside the JSON.
 """
 
     def grade_chunk(self, chunk: Any, intent: RetrievalIntent) -> dict:
-        debug_banner("TOPIC FILTER — CHUNK", chunk)
 
         grader_passed = None
         grader_reason = None
@@ -89,8 +89,6 @@ No extra keys. No commentary outside the JSON.
 
             grader_passed = result.passed
             grader_reason = result.reason
-
-            print(f"[TopicFilter] GRADE RESULT: {result}")
 
             if not result.passed:
                 return {
@@ -112,7 +110,7 @@ No extra keys. No commentary outside the JSON.
             indicator_results[ind.name] = ok
 
             if not ok:
-                print("[TopicFilter] ❌ REJECTED BY INDICATORS")
+
                 return {
                     "passed": False,
                     "grader_passed": grader_passed,
@@ -121,7 +119,6 @@ No extra keys. No commentary outside the JSON.
                     "failure_stage": "indicator",
                 }
 
-        print("[TopicFilter] ✅ ACCEPTED")
         return {
             "passed": True,
             "grader_passed": grader_passed,
@@ -151,7 +148,6 @@ Respond with "true" or "false".
 """
 
     def grade_chunk(self, chunk: Any, intent: RetrievalIntent) -> dict:
-        debug_banner("SUPPORT STATEMENT — CHUNK", chunk)
 
         prompt = self.build_prompt(chunk, intent)
         result = self.grader.grade(prompt)
@@ -159,7 +155,6 @@ Respond with "true" or "false".
         grader_passed = result.passed
         grader_reason = result.reason
 
-        print(f"[SupportStatement] GRADE RESULT: {result}")
 
         if not result.passed:
             return {
@@ -180,7 +175,6 @@ Respond with "true" or "false".
             indicator_results[ind.name] = ok
 
             if not ok:
-                print("[SupportStatement] ❌ REJECTED BY INDICATORS")
                 return {
                     "passed": False,
                     "grader_passed": grader_passed,
@@ -189,7 +183,6 @@ Respond with "true" or "false".
                     "failure_stage": "indicator",
                 }
 
-        print("[SupportStatement] ✅ ACCEPTED")
         return {
             "passed": True,
             "grader_passed": grader_passed,
@@ -228,20 +221,15 @@ class TripleSupportStrategy(BaseStrategy):
     No extra text.
     """
         
-
         return prompt
 
-
     def grade_chunk(self, chunk, intent):
-        debug_banner("TRIPLE SUPPORT — CHUNK", chunk)
 
         prompt = self.build_prompt(chunk, intent)
         result = self.grader.grade(prompt)
 
         grader_passed = result.passed
         grader_reason = result.reason
-
-        print(f"[TripleSupport] GRADE RESULT: {result}")
 
         if not grader_passed:
             return {
@@ -261,10 +249,8 @@ class TripleSupportStrategy(BaseStrategy):
             "failure_stage": None,
         }
 
-
-
 class RetrievalLayer:
-    def __init__(self, rag_store, grader, llm_call, threshold: float = 0.5):
+    def __init__(self, rag_store, grader, llm_call, threshold: float = 0.1):
 
         # Store rag_store so we can access time_field + normalization
         self.rag = rag_store
@@ -297,8 +283,6 @@ class RetrievalLayer:
                 grader, self.indicator_handlers
             ),
         }
-
-
 
     # ============================================================
     # NEW: Convert RetrievalIntent → Qdrant filter dict
@@ -337,14 +321,18 @@ class RetrievalLayer:
         indicators: Optional[List[Tuple[str, str, bool]]] = None,
         adaptive: bool = True,
         external_filter: Optional[dict] = None,
-        num_results_per_iteration=4,
+        num_results_per_iteration: int = 4,
+        diversify: bool = False,
+        verbose=False,
     ):
-        # -----------------------------------------
-        # 1. Determine whether we got a query or an intent
-        # -----------------------------------------
+
+        
+        # 1. Query vs intent
         if isinstance(query_or_intent, RetrievalIntent):
             intent = query_or_intent
             query = intent.guidance or intent.statement
+            if grading is not None:
+                intent.grading = grading
         else:
             query = str(query_or_intent)
             intent = RetrievalIntent(
@@ -355,14 +343,10 @@ class RetrievalLayer:
                 statement=query,
             )
 
-        # -----------------------------------------
-        # 2. Add indicators (if provided)
-        # -----------------------------------------
+        # 2. Indicators
         intent = add_indicators_to_intent(intent, indicators)
 
-        # -----------------------------------------
-        # 3. Determine retrieval mode
-        # -----------------------------------------
+        # 3. Mode
         has_time = bool(intent.date_after or intent.date_before)
         has_semantic = bool(intent.indicators or intent.guidance)
 
@@ -375,70 +359,76 @@ class RetrievalLayer:
         else:
             mode = "vanilla"
 
-        # -----------------------------------------
-        # 4. Initialize trace
-        # -----------------------------------------
+        # 4. Trace
         trace = RetrievalTrace(query=query, intent=intent)
         trace.mode = mode
 
-        debug_banner("RETRIEVAL START", f"QUERY: {query}\nMODE: {mode}")
-
-        # -----------------------------------------
-        # 5. Fast-path: Recency-only retrieval
-        # -----------------------------------------
+        # 5. Recency-only fast path
         if mode == "recency_only":
             return self._retrieve_recency_only(intent, trace)
 
-        # -----------------------------------------
-        # 6. Build normalized filter BEFORE batching
-        # -----------------------------------------
-        filter_dict = self.intent_to_filter(intent)
+        # 6. Base filter from intent
+        if type(external_filter) is not list:
 
-        # -----------------------------------------
-        # 6. Build normalized filter BEFORE batching
-        # -----------------------------------------
-        filter_dict = self.intent_to_filter(intent)
+            filter_dict = self.intent_to_filter(intent)
 
-        # -----------------------------------------
-        # 6b. Merge external filter (if provided)
-        # -----------------------------------------
+        # 6b. External filter handling
         if external_filter:
-            if "$and" not in filter_dict:
-                filter_dict["$and"] = []
-            if "$and" not in external_filter:
-                external_filter = {"$and": [external_filter]}
-            filter_dict["$and"].extend(external_filter["$and"])
 
+            if self.backend.is_chroma:
+                
+                filter_dict = external_filter
 
-        # 7. Semantic or hybrid retrieval
+            elif self.backend.is_qdrant:
+                # Qdrant path: keep existing $and behavior
+                if filter_dict is None:
+                    filter_dict = {}
+                if "$and" not in filter_dict:
+                    filter_dict["$and"] = []
+                if "$and" not in external_filter:
+                    external_filter = {"$and": [external_filter]}
+
+                filter_dict["$and"].extend(external_filter["$and"])
+
+        # 7. Strategy
         strategy = self.strategies[intent.type]
         results = []
 
-        # ---------------------------------------------------------
-        # Determine whether to use adaptive batching
-        # ---------------------------------------------------------
+        # 8. Adaptive flag
         use_adaptive = adaptive
-
-        # TRIPLE_SUPPORT always bypasses batching unless explicitly overridden
         if intent.type == IntentType.TRIPLE_SUPPORT:
             use_adaptive = False
 
-        # ---------------------------------------------------------
-        # NON-ADAPTIVE PATH (single retrieval)
-        # ---------------------------------------------------------
-        if not use_adaptive:
-            docs = self.backend.query(
-            query or intent.guidance,
-            limit=num_results_per_iteration,
-            filter=filter_dict,   
-        )
+        print('filter_dict')
+        print(filter_dict)
 
-            print(f"[Single Retrieval] Retrieved {len(docs)} chunks")
+        # 9. Non-adaptive path
+        if not use_adaptive:
+
+            docs = self.backend.query(
+                query or intent.guidance,
+                limit=num_results_per_iteration,
+                filter=filter_dict,
+                diversify=diversify,
+            )
+
+            if verbose:
+                print("docs")
+                print(docs)
 
             for chunk in docs:
                 trace.total_seen += 1
 
-                decision = strategy.grade_chunk(chunk, intent)
+                if grading is True:
+                    decision = strategy.grade_chunk(chunk, intent)
+                else:
+                    decision = {
+                        "passed": True,
+                        "grader_passed": True,
+                        "grader_reason": "grading is False",
+                        "indicator_results": {},
+                        "failure_stage": None,
+                    }
 
                 chunk_id = chunk.get("id") if isinstance(chunk, dict) else None
 
@@ -457,31 +447,40 @@ class RetrievalLayer:
                     trace.total_kept += 1
                     results.append(chunk)
 
-            debug_banner(
-                "RETRIEVAL COMPLETE",
-                f"Total Seen: {trace.total_seen}\nTotal Kept: {trace.total_kept}",
-            )
-
             self.save_trace(trace)
             return results, trace
 
-        # ---------------------------------------------------------
-        # ADAPTIVE PATH (default for all other intent types)
-        # ---------------------------------------------------------
+        # 10. Adaptive path
+        seen_ids = set()
+
         for batch in adaptive_batches(
             self.backend,
             query or intent.guidance,
             filter_dict=filter_dict,
             batch_size=num_results_per_iteration,
+            diversify=diversify,
         ):
             print(f"\n[BATCH] Retrieved {len(batch)} chunks")
 
             for chunk in batch:
+                chunk_id = chunk.get("id") if isinstance(chunk, dict) else None
+
+                if chunk_id in seen_ids:
+                    continue
+                seen_ids.add(chunk_id)
+
                 trace.total_seen += 1
 
-                decision = strategy.grade_chunk(chunk, intent)
-
-                chunk_id = chunk.get("id") if isinstance(chunk, dict) else None
+                if grading is True:
+                    decision = strategy.grade_chunk(chunk, intent)
+                else:
+                    decision = {
+                        "passed": True,
+                        "grader_passed": True,
+                        "grader_reason": "grading is False",
+                        "indicator_results": {},
+                        "failure_stage": None,
+                    }
 
                 trace.chunks.append(
                     ChunkTrace(
@@ -513,7 +512,7 @@ class RetrievalLayer:
         self.save_trace(trace)
         return results, trace
 
-        
+
     def visualize(self, trace):
         print("\n================ RETRIEVAL TRACE ================\n")
         print(f"Query: {trace.query}")

@@ -100,8 +100,6 @@ def _scroll_with_vectors(backend, norm_filter):
 
     return results
 
-
-
 def _scroll_metadata_only(backend, norm_filter):
     results = []
     next_offset = None
@@ -132,8 +130,6 @@ def _scroll_metadata_only(backend, norm_filter):
             break
 
     return results
-
-
 
 def _deterministic_weighted_sample_ids(
     meta_chunks: List[Dict[str, Any]],

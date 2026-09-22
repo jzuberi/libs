@@ -10,7 +10,16 @@ _QDRANT_REGISTRY = {
     },
     "news":{
         "layer_0":"/Users/pense/projects/data/news/interpretive_layers/0/",
+        "layer_0_lance":"/Users/pense/projects/data/news/interpretive_layers/0_lance/",
+        "layer_0_chroma":"/Users/pense/projects/data/news/interpretive_layers/0_chroma/",
         "triples":"/Users/pense/projects/data/news/interpretive_layers/triples/",
+    },
+    "earnings":{
+        "transcripts":"/Users/pense/projects/content/earnings_calls/data/rag/transcripts/",
+        "hooks":"/Users/pense/projects/content/earnings_calls/data/rag/hooks/"
+    },
+    "congress":{
+        "house_transcripts":"/Users/pense/projects/content/congress/data/rag/house_transcripts/",
     }
 }
 

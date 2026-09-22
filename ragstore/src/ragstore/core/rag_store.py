@@ -15,11 +15,10 @@ from .embedding_utils import (
     format_document_embedding_output,
 )
 
-
 from datetime import datetime
 
-
 class RAGStore:
+    
     def __init__(
         self,
         backend: VectorBackend,
@@ -88,6 +87,28 @@ class RAGStore:
     # ---------------------------------------------------------
     # Ingestion
     # ---------------------------------------------------------
+
+
+    def add_raw_chunks(
+        self,
+        raw_chunks: Iterable[object],
+        batch_size: int = 5000,
+    ) -> None:
+        """
+        Accepts arbitrary objects and normalizes them into Chunk.
+        This is the public-friendly ingestion API.
+        """
+
+        def gen():
+            for obj in raw_chunks:
+                try:
+                    yield normalize_chunk(obj)
+                except ChunkNormalizationError as e:
+                    # You can log or raise depending on your preference
+                    raise
+
+        self.add_chunks(gen(), batch_size=batch_size)
+
     def add_chunks(self, chunks, batch_size=500):
 
         ids_batch = []
@@ -159,17 +180,17 @@ class RAGStore:
     # Core query
     # ---------------------------------------------------------
 
-    def query(self, query: str, k: int = 10, filter=None):
-        """
-        Default retrieval: hybrid (vector + keyword + fusion).
-        """
+    def query(self, query: str, k: int = 10, filter=None, diversify=False):
+
         ids = self.hybrid.hybrid_search(
             query=query,
             ragstore=self,
             k=k,
             filter=filter,
+            diversify=diversify,
         )
         return self.backend.get_by_ids(ids)
+
 
     def query_vector(
         self,
@@ -179,10 +200,61 @@ class RAGStore:
     ) -> QueryResult:
         """
         Canonical query method: everything flows through this.
+        Defensive against malformed queries and embedding failures.
         """
+
+        # Normalize filter
         norm_filter = self._normalize_filter(filter)
-        q_vec = self.embeddings.embed_query(query)
-        return self.backend.query(q_vec, k=k, filter=norm_filter)
+
+        # Sanitize query
+        if not isinstance(query, str):
+            query = ""
+        query = query.replace("\n", " ").strip()
+
+        # Empty query → empty result
+        if not query:
+            return QueryResult(
+                ids=[],
+                vectors=[],
+                metadatas=[],
+                documents=[],
+                distances=[]
+            )
+
+        # Safe embedding
+        try:
+            q_vec = self.embeddings.embed_query(query)
+        except Exception:
+            return QueryResult(
+                ids=[],
+                vectors=[],
+                metadatas=[],
+                documents=[],
+                distances=[]
+            )
+
+        # Embedding returned nothing usable
+        if q_vec is None:
+            return QueryResult(
+                ids=[],
+                vectors=[],
+                metadatas=[],
+                documents=[],
+                distances=[]
+            )
+
+        # Backend query
+        try:
+            return self.backend.query(q_vec, k=k, filter=norm_filter)
+        except Exception:
+            return QueryResult(
+                ids=[],
+                vectors=[],
+                metadatas=[],
+                documents=[],
+                distances=[]
+            )
+
 
     # ---------------------------------------------------------
     # Convenience queries
@@ -248,26 +320,6 @@ class RAGStore:
         Placeholder: wire this to your existing 'get_text_from_url' logic.
         """
         raise NotImplementedError("get_text_from_url() not implemented yet")
-    
-    def add_raw_chunks(
-        self,
-        raw_chunks: Iterable[object],
-        batch_size: int = 500,
-    ) -> None:
-        """
-        Accepts arbitrary objects and normalizes them into Chunk.
-        This is the public-friendly ingestion API.
-        """
-
-        def gen():
-            for obj in raw_chunks:
-                try:
-                    yield normalize_chunk(obj)
-                except ChunkNormalizationError as e:
-                    # You can log or raise depending on your preference
-                    raise
-
-        self.add_chunks(gen(), batch_size=batch_size)
 
     def hybrid_query(self, query: str, k: int = 10, filter=None):
         return self.query(query, k=k, filter=filter)

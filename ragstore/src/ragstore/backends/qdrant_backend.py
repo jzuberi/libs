@@ -152,24 +152,49 @@ class QdrantBackend(VectorBackend):
     def upsert(self, ids, vectors, metadatas, documents):
         self._ensure_open()
 
+        # -----------------------------
+        # Build all points first
+        # -----------------------------
         points = []
         for idx, vec, meta, doc in zip(ids, vectors, metadatas, documents):
+
+            # Copy metadata
             payload = dict(meta)
+
+            # ⚠️ Optional: REMOVE full text for speed
+            # payload["text_ref"] = idx
+            # Instead of:
             payload["text"] = doc
+
             payload["original_id"] = idx
+
+            # ⚡ Use fast integer IDs instead of UUID5
+            try:
+                point_id = int(idx)
+            except:
+                point_id = abs(hash(idx)) % (2**63)
 
             points.append(
                 PointStruct(
-                    id=str(uuid.uuid5(uuid.NAMESPACE_DNS, idx)),
+                    id=point_id,
                     vector=vec,
                     payload=payload,
                 )
             )
 
-        self.client.upsert(
-            collection_name=self.collection_name,
-            points=points,
-        )
+        # -----------------------------
+        # REAL BATCHING (critical)
+        # -----------------------------
+        BATCH_SIZE = 2000  # sweet spot for Qdrant
+
+        for i in range(0, len(points), BATCH_SIZE):
+            batch = points[i:i + BATCH_SIZE]
+
+            self.client.upsert(
+                collection_name=self.collection_name,
+                points=batch,
+            )
+
 
     # ============================================================
     # Query
@@ -332,3 +357,31 @@ class QdrantBackend(VectorBackend):
         )
 
         return {p.payload["doc_id"] for p in points}
+
+    def get_vectors(self, ids: list[str]) -> list[Optional[list[float]]]:
+        """
+        Fetch vectors for a list of point IDs.
+        Returns vectors in the same order as the input IDs.
+        Missing IDs return None in that position.
+        """
+        self._ensure_open()
+
+        if not ids:
+            return []
+
+        try:
+            results = self.client.retrieve(
+                collection_name=self.collection_name,
+                ids=ids,
+                with_vectors=True,
+                with_payload=False,
+            )
+        except Exception:
+            # Fail-safe: return None for each ID
+            return [None] * len(ids)
+
+        # Map id → vector
+        vec_map = {str(point.id): point.vector for point in results}
+
+        # Preserve input order
+        return [vec_map.get(str(id_), None) for id_ in ids]

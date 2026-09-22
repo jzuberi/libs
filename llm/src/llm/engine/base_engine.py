@@ -98,6 +98,26 @@ class BaseLLMEngine:
     # -------------------------
     @log_engine_call("metadata")
     def metadata(self, text: str):
+
+        def repair_json(raw: str) -> str:
+            # Remove invalid escapes like \'
+            raw = raw.replace("\\'", "'")
+
+            # Replace smart quotes with normal quotes
+            raw = raw.replace("“", "\"").replace("”", "\"")
+
+            # Replace smart apostrophes and dashes
+            raw = raw.replace("’", "'").replace("–", "-")
+
+            # Remove stray backslashes that are not part of valid JSON escapes
+            raw = re.sub(r'\\(?=[^"\\/bfnrtu])', '', raw)
+
+            # Remove trailing commas before } or ]
+            raw = re.sub(r",\s*([}\]])", r"\1", raw)
+
+            return raw
+
+
         prompt = f"""
         You are a careful and precise metadata generator.
 
@@ -110,6 +130,7 @@ class BaseLLMEngine:
         """
 
         raw = self._call_backend(prompt)
+        raw = repair_json(raw)
         parsed = self.parser.parse(raw)
 
         DynamicMetadataSchema = create_model(
@@ -118,6 +139,7 @@ class BaseLLMEngine:
         )
 
         return DynamicMetadataSchema(**parsed)
+
 
     # -------------------------
     # EDIT

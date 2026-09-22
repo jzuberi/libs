@@ -152,7 +152,7 @@ You MUST return valid JSON with EXACTLY this structure:
 
 Rules:
 - The "topic" MUST NOT be a paraphrase of the user's query.
-- The "topic" MUST be a broad subject‑matter category.
+- The "topic" MUST be a subject‑matter category based on user's query.
 - Extract geographic regions, industries, and broad topics.
 - If the user expresses a claim, set type="support_statement".
 - Otherwise use type="topic_filter".

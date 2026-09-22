@@ -42,7 +42,11 @@ def make_choice_handlers(config: ChoiceConfig):
     def identifying_text(obj):
         # Preferred: model-defined method
         if hasattr(obj, "identifying_text") and callable(obj.identifying_text):
-            return obj.identifying_text().lower()
+
+            id_text = obj.identifying_text().lower()
+
+            if(len(id_text)>10):
+                return obj.identifying_text().lower()
 
         # Fallback: concatenate all string fields
         try:
