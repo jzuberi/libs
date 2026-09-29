@@ -234,15 +234,24 @@ def get_general_answerer(local_llm = 'llama-3.1-8b-instruct', retry=True, local_
         )
 
         template_str = """
-            You are a thoughtful and strategic expert. 
-            You are provided with the following information: 
-            (1) Question 
-            For instance, if provided with a question about how to choose a hobby,
-            give helpful and thoughtful suggestions.
-            Provide the english language answer 
-            in a JSON with a single key 'answer' and no preamble, no explanation.
-            Here is the text of the question: \n\n {question} \n\n
-            """
+        You are a thoughtful and strategic expert.
+        You must respond ONLY with valid JSON.
+
+        Return exactly one JSON object:
+        {{
+        "answer": "<your answer as a single JSON string>"
+        }}
+
+        Rules:
+        - The value of "answer" MUST be a JSON string.
+        - DO NOT include line breaks outside the JSON.
+        - DO NOT include any text before or after the JSON.
+        - DO NOT include unquoted text inside the JSON.
+        Here is the text of the question:
+
+        {question}
+        """
+
 
     llm_gen_q_prompt = PromptTemplate(
         template=template_str,

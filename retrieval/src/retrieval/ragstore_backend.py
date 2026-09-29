@@ -307,12 +307,14 @@ class RAGStoreBackend:
                 return res.get("ids", [])
 
             elif self.is_qdrant:
+
                 scroll_res = self.rag.backend.client.scroll(
                     collection_name=self.rag.backend.collection_name,
                     scroll_filter=where_filter,
                     limit=k,
                     with_payload=False,
                 )
+                
                 return [p.id for p in scroll_res[0]]
 
             else:

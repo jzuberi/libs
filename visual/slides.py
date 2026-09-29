@@ -1216,14 +1216,15 @@ class ScrollSlide:
     def build_transcript_blocks(
         segments,
         speaker_font="bold",
-        speaker_size=60,
+        speaker_size=55,
         speaker_color=[255, 255, 0],
         content_font="regular",
-        content_size=60,
+        content_size=55,
         content_color=[255, 255, 255],
         gap_after=20,
     ):
         blocks = []
+
         for seg in segments:
             blocks.append({
                 "type": "rich_text",
@@ -1296,8 +1297,6 @@ class ScrollSlide:
                 ]
             }
 
-            print(intro_layout)
-
             intro_height = measure_slide_height(
                 intro_layout,
                 self.canvas_size[0],
@@ -1328,7 +1327,6 @@ class ScrollSlide:
             text_height = combined_height
 
         else:
-            # No intro image → revert to original behavior
             img = main_img
             text_height = main_height
 
@@ -1351,7 +1349,6 @@ class ScrollSlide:
         W, H = self.canvas_size
 
         # Scroll math
-        # y_start depends on whether intro image exists
         if intro_spec is not None:
             y_start = 400
         else:
@@ -1360,10 +1357,10 @@ class ScrollSlide:
         y_end = H - text_height - 450
 
         def scroll_position(t):
-            
             progress = min(max(t / duration, 0.0), 1.0)
             y = y_start + progress * (y_end - y_start)
             return ("center", y)
+
 
         txt_clip = txt_clip.set_duration(duration).set_position(scroll_position)
 
@@ -1377,34 +1374,68 @@ class ScrollSlide:
         overlay_clips = [background, txt_clip]
 
         # ------------------------------------------------------------
-        # 5. HEADER OVERLAY (unchanged)
+        # 5. HEADER OVERLAY (updated with auto-fit + centering)
         # ------------------------------------------------------------
         header_spec = self.layout_spec.get("header")
 
         if header_spec is not None:
 
-            header_layout = {
-                "background_color": header_spec.get("bg_color", [0,0,0]),
-                "padding": header_spec.get("padding", 40),
-                "fonts": self.layout_spec["fonts"],
-                "blocks": [
-                    {
-                        "type": "text",
-                        "text": header_spec["text"],
-                        "font": header_spec.get("font", "regular"),
-                        "size": header_spec.get("size", 40),
-                        "color": header_spec.get("color", [255,255,255]),
-                        "gap_after": 20
-                    }
-                ]
-            }
+            forced_height = header_spec.get("height", None)
+            y_offset = 0
+            font_size = header_spec.get("size", 40)
 
-            canvas_height = measure_slide_height(
-                header_layout,
-                W,
-                scale=1.0
-            )
 
+            # Build header layout with adjustable font size
+            def build_header_layout(size):
+
+                bg_header_color = header_spec.get("bg_color", [0,0,0])
+                top_margin_pct = header_spec.get("top_margin_pct", 0.6)
+
+                return {
+                    "background_color": header_spec.get("bg_color", [0,0,0]),
+                    "padding": header_spec.get("padding", 40),
+                    "fonts": self.layout_spec["fonts"],
+                    "blocks": [
+                        {
+                            "type": "text",
+                            "text": "H",
+                            "font": header_spec.get("font", "regular"),
+                            "size": 1,
+                            "color": bg_header_color,
+                            "gap_after": int(forced_height*top_margin_pct),
+                            "vertical_align": "center"
+                        },
+                        {
+                            "type": "text",
+                            "text": header_spec["text"],
+                            "font": header_spec.get("font", "regular"),
+                            "size": size,
+                            "color": header_spec.get("color", [255,255,255]),
+                            "gap_after": 1,
+                            "vertical_align": "center"
+                        }
+                    ]
+                }
+
+            # Auto-fit text if forced height is provided
+            if forced_height is not None:
+                forced_height = min(forced_height, H)
+
+                while True:
+                    header_layout = build_header_layout(font_size)
+                    measured_height = measure_slide_height(header_layout, W, scale=1.0)
+
+                    if measured_height <= forced_height or font_size <= 10:
+                        canvas_height = forced_height
+                        break
+
+                    font_size -= 4  # shrink step
+
+            else:
+                header_layout = build_header_layout(font_size)
+                canvas_height = measure_slide_height(header_layout, W, scale=1.0)
+
+            # Render header
             header_renderer = SlideRenderer(
                 layout_spec=header_layout,
                 canvas_size=(self.canvas_size[0], canvas_height),
@@ -1418,18 +1449,22 @@ class ScrollSlide:
 
             header_clip = (
                 ImageClip(temp_header_path)
-                .set_position(("center", "top"))
+                .set_position(("center", y_offset))
                 .set_duration(duration)
             )
 
             overlay_clips.append(header_clip)
 
+        # ------------------------------------------------------------
+        # Final composite
+        # ------------------------------------------------------------
         scroll_clip = CompositeVideoClip(overlay_clips)
 
         if audio is not None:
             scroll_clip = scroll_clip.set_audio(audio)
 
         return scroll_clip
+
 
 
 def measure_slide_height(layout_spec, width, scale=1.0):

@@ -1,12 +1,13 @@
 from pathlib import Path
 
 # INTERNAL, not user-editable
-_QDRANT_REGISTRY = {
+_REGISTRY = {
     "test": {
         "chunks": "/Users/pense/projects/scotus/notebooks/ragstore_test",
     },
     "scotus":{
         "cases":"/Users/pense/projects/content/scotus/data/dbs/rag/cases/",
+        "case_summaries":"/Users/pense/projects/content/scotus/data/dbs/rag/case_summaries/",
     },
     "news":{
         "layer_0":"/Users/pense/projects/data/news/interpretive_layers/0/",
@@ -25,7 +26,7 @@ _QDRANT_REGISTRY = {
 
 def _resolve_path(project: str, collection: str) -> Path:
     try:
-        path = _QDRANT_REGISTRY[project][collection]
+        path = _REGISTRY[project][collection]
     except KeyError:
         raise KeyError(f"Unknown project/collection: {project}/{collection}")
 
